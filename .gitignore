@@ -1,0 +1,7 @@
+# Data and outputs
+data/
+outputs/
+
+# Temporaries
+__pycache__/
+.DS_Store
