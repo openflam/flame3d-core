@@ -33,8 +33,3 @@ def get_colmap_output_path(dataset_name: str) -> Path:
 def get_images_output_path(dataset_name: str) -> Path:
     """Return ``outputs/<dataset_name>/images/``."""
     return get_output_path(dataset_name) / "images"
-
-
-def get_colmap_images_output_path(dataset_name: str) -> Path:
-    """Return ``outputs/<dataset_name>/colmap/images/``."""
-    return get_colmap_output_path(dataset_name) / "images"

@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Objects Inventory Matrix</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #111827;
+      --surface:     #1f2937;
+      --surface2:    #374151;
+      --border:      #374151;
+      --text:        #e5e7eb;
+      --text-muted:  #6b7280;
+      --accent-obj:  #a78bfa;
+      --accent-frm:  #6ee7b7;
+      --cell-hit:    #22c55e;
+      --cell-hit-hv: #86efac;
+      --cell-miss:   #1e293b;
+      --cell-miss-hv:#2d3f54;
+      --grid:        #1e293b;
+      --corner-bg:   #0d1117;
+      --highlight-row: rgba(167,139,250,0.07);
+      --highlight-col: rgba(110,231,183,0.07);
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+
+    /* ── Top bar ─────────────────────────────────────────────── */
+    #topbar {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      padding: 10px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #topbar h1 { font-size: 15px; color: var(--accent-frm); white-space: nowrap; }
+    #subtitle  { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+    .ctrl-group { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+    .ctrl-group label { font-size: 11px; color: var(--text-muted); }
+
+    #search {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 8px; font-size: 11px; width: 160px;
+      outline: none;
+    }
+    #search:focus { border-color: var(--accent-obj); }
+
+    #zoom-range { accent-color: var(--accent-frm); width: 80px; }
+
+    .btn {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn:hover { border-color: var(--accent-frm); color: var(--accent-frm); }
+
+    /* ── Stats badge ─────────────────────────────────────────── */
+    .badge {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+      padding: 3px 8px; font-size: 11px; color: var(--text-muted); white-space: nowrap;
+    }
+    .badge span { color: var(--text); font-weight: bold; }
+
+    /* ── Legend ──────────────────────────────────────────────── */
+    .legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+    .legend-box { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── Main scroll area ────────────────────────────────────── */
+    #viewport {
+      flex: 1; overflow: auto;
+      cursor: grab;
+      user-select: none;
+      /* custom scrollbar */
+      scrollbar-color: var(--surface2) transparent;
+      scrollbar-width: thin;
+    }
+    #viewport.dragging { cursor: grabbing; }
+    #viewport::-webkit-scrollbar { width: 8px; height: 8px; }
+    #viewport::-webkit-scrollbar-track { background: transparent; }
+    #viewport::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 4px; }
+
+    body { display: flex; flex-direction: column; }
+
+    /* freeze-pane grid: corner | header / sidebar | cells */
+    #matrix-grid {
+      display: inline-grid;
+      grid-template-columns: 210px auto;
+      grid-template-rows: 115px auto;
+    }
+    #corner-canvas  { position: sticky; top: 0; left: 0; z-index: 3; display: block; }
+    #header-canvas  { position: sticky; top:  0; z-index: 2; display: block; }
+    #sidebar-canvas { position: sticky; left: 0; z-index: 2; display: block; }
+    #cells-canvas   { display: block; }
+
+    /* ── Tooltip ─────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed; z-index: 9999;
+      background: rgba(17,24,39,0.97); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px; width: 264px;
+      pointer-events: none; display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      transition: opacity 0.08s ease;
+    }
+    #tooltip.visible { display: block; }
+    #tooltip-img {
+      width: 248px; height: 186px; object-fit: cover;
+      border-radius: 5px; display: block; background: var(--surface2);
+    }
+    #tooltip-frame { font-size: 10px; color: var(--accent-frm); margin-top: 5px; }
+    #tooltip-obj   { font-size: 11px; color: var(--text); margin-top: 2px; word-break: break-word; }
+
+    /* ── Loading overlay ─────────────────────────────────────── */
+    #loading {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--bg); z-index: 500; gap: 16px;
+    }
+    #loading p { color: var(--text-muted); font-size: 13px; }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid var(--surface2);
+      border-top-color: var(--cell-hit); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Objects Inventory Matrix</h1>
+  <span id="subtitle" class="badge">Loading…</span>
+
+  <div class="ctrl-group">
+    <label for="search">Filter objects:</label>
+    <input id="search" type="text" placeholder="e.g. table, saw…" autocomplete="off" />
+
+    <label for="zoom-range">Cell size:</label>
+    <input id="zoom-range" type="range" min="8" max="28" value="14" />
+    <span id="zoom-val" style="font-size:11px;color:var(--text-muted);min-width:24px">14</span>
+
+    <button class="btn" id="btn-reset-filter">Reset</button>
+  </div>
+
+  <div class="legend">
+    <div class="legend-box" style="background:var(--cell-hit)"></div> present
+    <div class="legend-box" style="background:var(--cell-miss);border:1px solid var(--border)"></div> absent
+  </div>
+</div>
+
+<div id="viewport">
+  <div id="matrix-grid">
+    <canvas id="corner-canvas"  width="210" height="115"></canvas>
+    <canvas id="header-canvas"  height="115"></canvas>
+    <canvas id="sidebar-canvas" width="210"></canvas>
+    <canvas id="cells-canvas"></canvas>
+  </div>
+</div>
+
+<div id="tooltip">
+  <img id="tooltip-img" src="" alt="" loading="lazy" />
+  <div id="tooltip-frame"></div>
+  <div id="tooltip-obj"></div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Loading inventory data…</p>
+</div>
+
+<script>
+"use strict";
+
+// ── Config ────────────────────────────────────────────────────
+const LABEL_LEFT = 210;   // sidebar width  (matches CSS grid column)
+const LABEL_TOP  = 115;   // header height  (matches CSS grid row)
+let   CELL       = 14;
+
+const C = {
+  bg:         "#111827",
+  cornerBg:   "#0d1117",
+  cellHit:    "#22c55e",
+  cellHitHv:  "#86efac",
+  cellMiss:   "#1e293b",
+  cellMissHv: "#2d3f54",
+  grid:       "#1e293b",
+  objText:    "#a78bfa",
+  objTextHv:  "#c4b5fd",
+  frmText:    "#6ee7b7",
+  frmTextHv:  "#a7f3d0",
+  rowHl:      "rgba(167,139,250,0.09)",
+  colHl:      "rgba(110,231,183,0.09)",
+  crossHair:  "rgba(255,255,255,0.25)",
+};
+
+// ── State ─────────────────────────────────────────────────────
+let frames     = [];
+let objects    = [];
+let matrix     = null;
+let dataset    = "";
+let visObjects = [];
+
+// 4 canvases
+let cornerCanvas, cornerCtx;
+let headerCanvas, headerCtx;
+let sidebarCanvas, sidebarCtx;
+let cellsCanvas, cellsCtx;
+let offCells; // OffscreenCanvas for cells base layer
+
+// Hover state (in cells-canvas coordinates)
+let hoveredCell  = null;   // { row, fi }
+let tooltipFrame = null;
+
+// Drag state
+let isDragging  = false;
+let dragStartX  = 0;
+let dragStartY  = 0;
+let dragScrollX = 0;
+let dragScrollY = 0;
+
+// ── Helpers ───────────────────────────────────────────────────
+function matGet(oi, fi) { return matrix[oi * frames.length + fi]; }
+function cellsW()   { return frames.length     * CELL; }
+function cellsH()   { return visObjects.length * CELL; }
+
+// ── Data loading ──────────────────────────────────────────────
+async function loadData() {
+  const resp = await fetch("/api/data");
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+
+  dataset = data.dataset;
+  frames  = data.frames;
+  objects = data.objects;
+
+  const nF = frames.length, nO = objects.length;
+  matrix = new Uint8Array(nO * nF);
+
+  const frameIdx = new Map(frames.map((f, i) => [f, i]));
+  const objIdx   = new Map(objects.map((o, i) => [o, i]));
+
+  for (const [frame, objs] of Object.entries(data.data)) {
+    const fi = frameIdx.get(frame);
+    if (fi === undefined) continue;
+    for (const obj of objs) {
+      const oi = objIdx.get(obj);
+      if (oi !== undefined) matrix[oi * nF + fi] = 1;
+    }
+  }
+
+  visObjects = objects.map((_, i) => i);
+
+  document.getElementById("subtitle").textContent =
+    `${dataset}  ·  ${frames.length} frames  ×  ${objects.length} unique objects`;
+  document.getElementById("loading").style.display = "none";
+
+  initCanvases();
+  buildAll();
+}
+
+// ── Canvas init ───────────────────────────────────────────────
+function initCanvases() {
+  const viewport = document.getElementById("viewport");
+
+  cornerCanvas  = document.getElementById("corner-canvas");
+  headerCanvas  = document.getElementById("header-canvas");
+  sidebarCanvas = document.getElementById("sidebar-canvas");
+  cellsCanvas   = document.getElementById("cells-canvas");
+
+  cornerCtx  = cornerCanvas.getContext("2d");
+  headerCtx  = headerCanvas.getContext("2d");
+  sidebarCtx = sidebarCanvas.getContext("2d");
+  cellsCtx   = cellsCanvas.getContext("2d");
+
+  // Mouse events for hover/tooltip on cells canvas
+  cellsCanvas.addEventListener("mousemove", onCellsMouseMove);
+  cellsCanvas.addEventListener("mouseleave", onCellsMouseLeave);
+
+  // Drag-to-pan on viewport
+  viewport.addEventListener("mousedown", onDragStart);
+  window.addEventListener("mousemove", onDragMove);
+  window.addEventListener("mouseup", onDragEnd);
+}
+
+// ── Build all canvases ────────────────────────────────────────
+function buildAll() {
+  const W = cellsW(), H = cellsH();
+
+  // Resize dynamic canvases
+  headerCanvas.width   = W;
+  sidebarCanvas.height = H;
+  cellsCanvas.width    = W;
+  cellsCanvas.height   = H;
+
+  drawCorner();
+  drawHeader();
+  drawSidebar();
+  buildOffscreenCells();
+  drawCells();
+}
+
+// ── Corner ────────────────────────────────────────────────────
+function drawCorner() {
+  const oc = cornerCtx;
+  oc.fillStyle = C.cornerBg;
+  oc.fillRect(0, 0, LABEL_LEFT, LABEL_TOP);
+  oc.font         = "bold 10px monospace";
+  oc.textAlign    = "center";
+  oc.textBaseline = "middle";
+  oc.fillStyle    = "#4b5563";
+  oc.fillText("objects ↓", LABEL_LEFT / 2, LABEL_TOP / 2 + 7);
+  oc.fillText("frames →",  LABEL_LEFT / 2, LABEL_TOP / 2 - 7);
+}
+
+// ── Header (frame labels, rotated) ───────────────────────────
+function drawHeader(hovFi = -1) {
+  const oc = headerCtx;
+  const W  = cellsW();
+  oc.fillStyle = C.bg;
+  oc.fillRect(0, 0, W, LABEL_TOP);
+
+  // Optional column highlight
+  if (hovFi >= 0) {
+    oc.fillStyle = C.colHl;
+    oc.fillRect(hovFi * CELL, 0, CELL, LABEL_TOP);
+  }
+
+  const frmFontSize = Math.max(7, Math.min(10, CELL - 3));
+  oc.font         = `${frmFontSize}px monospace`;
+  oc.textAlign    = "left";
+  oc.textBaseline = "middle";
+
+  for (let fi = 0; fi < frames.length; fi++) {
+    const x = fi * CELL + CELL / 2;
+    oc.save();
+    oc.translate(x, LABEL_TOP - 5);
+    oc.rotate(-Math.PI / 2);
+    oc.fillStyle = fi === hovFi ? C.frmTextHv : C.frmText;
+    oc.font      = fi === hovFi
+      ? `bold ${frmFontSize}px monospace`
+      : `${frmFontSize}px monospace`;
+    oc.fillText(frames[fi], 0, 0);
+    oc.restore();
+  }
+}
+
+// ── Sidebar (object labels) ───────────────────────────────────
+function drawSidebar(hovRow = -1) {
+  const oc = sidebarCtx;
+  const H  = cellsH();
+  oc.fillStyle = C.bg;
+  oc.fillRect(0, 0, LABEL_LEFT, H);
+
+  if (hovRow >= 0) {
+    oc.fillStyle = C.rowHl;
+    oc.fillRect(0, hovRow * CELL, LABEL_LEFT, CELL);
+  }
+
+  const labelFontSize = Math.max(8, Math.min(11, CELL - 2));
+  oc.font         = `${labelFontSize}px monospace`;
+  oc.textAlign    = "right";
+  oc.textBaseline = "middle";
+
+  const maxChars = Math.floor((LABEL_LEFT - 10) / (labelFontSize * 0.6));
+
+  for (let row = 0; row < visObjects.length; row++) {
+    const oi    = visObjects[row];
+    const y     = row * CELL + CELL / 2;
+    const full  = objects[oi];
+    const label = full.length > maxChars ? full.slice(0, maxChars - 1) + "…" : full;
+    oc.fillStyle = row === hovRow ? C.objTextHv : C.objText;
+    oc.font      = row === hovRow
+      ? `bold ${labelFontSize}px monospace`
+      : `${labelFontSize}px monospace`;
+    oc.fillText(label, LABEL_LEFT - 6, y);
+  }
+}
+
+// ── Cells offscreen base ──────────────────────────────────────
+function buildOffscreenCells() {
+  const W = cellsW(), H = cellsH();
+  offCells = new OffscreenCanvas(W, H);
+  const oc = offCells.getContext("2d");
+
+  oc.fillStyle = C.bg;
+  oc.fillRect(0, 0, W, H);
+
+  const nF = frames.length;
+  for (let row = 0; row < visObjects.length; row++) {
+    const oi = visObjects[row];
+    const y  = row * CELL;
+    for (let fi = 0; fi < nF; fi++) {
+      oc.fillStyle = matGet(oi, fi) ? C.cellHit : C.cellMiss;
+      oc.fillRect(fi * CELL + 1, y + 1, CELL - 2, CELL - 2);
+    }
+  }
+
+  // Grid lines
+  oc.strokeStyle = C.grid;
+  oc.lineWidth   = 0.5;
+  for (let row = 0; row <= visObjects.length; row++) {
+    const y = row * CELL;
+    oc.beginPath(); oc.moveTo(0, y); oc.lineTo(W, y); oc.stroke();
+  }
+  for (let fi = 0; fi <= nF; fi++) {
+    const x = fi * CELL;
+    oc.beginPath(); oc.moveTo(x, 0); oc.lineTo(x, H); oc.stroke();
+  }
+}
+
+// ── Draw cells canvas (base + hover overlay) ──────────────────
+function drawCells() {
+  cellsCtx.drawImage(offCells, 0, 0);
+  if (!hoveredCell) return;
+
+  const { row, fi } = hoveredCell;
+  if (row < 0 || row >= visObjects.length || fi < 0 || fi >= frames.length) return;
+
+  const oi = visObjects[row];
+  const cx = fi   * CELL;
+  const cy = row  * CELL;
+  const W  = cellsW(), H = cellsH();
+
+  // Row + col highlights
+  cellsCtx.fillStyle = C.rowHl;
+  cellsCtx.fillRect(0, cy, W, CELL);
+  cellsCtx.fillStyle = C.colHl;
+  cellsCtx.fillRect(cx, 0, CELL, H);
+
+  // Hovered cell
+  cellsCtx.fillStyle = matGet(oi, fi) ? C.cellHitHv : C.cellMissHv;
+  cellsCtx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
+
+  // Crosshair border
+  cellsCtx.strokeStyle = C.crossHair;
+  cellsCtx.lineWidth   = 1;
+  cellsCtx.strokeRect(cx + 0.5, cy + 0.5, CELL - 1, CELL - 1);
+}
+
+// ── Mouse: cells canvas ───────────────────────────────────────
+function onCellsMouseMove(e) {
+  const rect = cellsCanvas.getBoundingClientRect();
+  const fi   = Math.floor((e.clientX - rect.left)  / CELL);
+  const row  = Math.floor((e.clientY - rect.top)   / CELL);
+  const inside = fi >= 0 && fi < frames.length && row >= 0 && row < visObjects.length;
+
+  const prev = hoveredCell;
+  hoveredCell = inside ? { row, fi } : null;
+
+  const changed =
+    (!prev && hoveredCell) || (prev && !hoveredCell) ||
+    (prev && hoveredCell && (prev.row !== row || prev.fi !== fi));
+
+  if (changed) {
+    drawCells();
+    drawHeader(inside ? fi  : -1);
+    drawSidebar(inside ? row : -1);
+  }
+
+  if (inside) {
+    showTooltip(e.clientX, e.clientY, fi, row);
+  } else {
+    hideTooltip();
+  }
+}
+
+function onCellsMouseLeave() {
+  if (hoveredCell) {
+    hoveredCell = null;
+    drawCells();
+    drawHeader();
+    drawSidebar();
+  }
+  hideTooltip();
+}
+
+// ── Drag-to-pan ───────────────────────────────────────────────
+function onDragStart(e) {
+  if (e.button !== 0) return;
+  isDragging  = true;
+  dragStartX  = e.clientX;
+  dragStartY  = e.clientY;
+  const vp    = document.getElementById("viewport");
+  dragScrollX = vp.scrollLeft;
+  dragScrollY = vp.scrollTop;
+  vp.classList.add("dragging");
+  e.preventDefault();
+}
+
+function onDragMove(e) {
+  if (!isDragging) return;
+  const vp = document.getElementById("viewport");
+  vp.scrollLeft = dragScrollX - (e.clientX - dragStartX);
+  vp.scrollTop  = dragScrollY - (e.clientY - dragStartY);
+}
+
+function onDragEnd() {
+  if (!isDragging) return;
+  isDragging = false;
+  document.getElementById("viewport").classList.remove("dragging");
+}
+
+// ── Tooltip ───────────────────────────────────────────────────
+const tooltipEl  = document.getElementById("tooltip");
+const tooltipImg = document.getElementById("tooltip-img");
+const tooltipFrm = document.getElementById("tooltip-frame");
+const tooltipObj = document.getElementById("tooltip-obj");
+
+function showTooltip(cx, cy, fi, row) {
+  const frameName = frames[fi];
+  const oi        = visObjects[row];
+
+  if (tooltipFrame !== frameName) {
+    tooltipFrame   = frameName;
+    tooltipImg.src = `/images/${frameName}.jpg`;
+  }
+
+  tooltipFrm.textContent = frameName;
+  tooltipObj.textContent = objects[oi];
+
+  const margin = 14, tw = 264, th = 240;
+  let tx = cx + margin, ty = cy + margin;
+  if (tx + tw > window.innerWidth)  tx = cx - tw - margin;
+  if (ty + th > window.innerHeight) ty = cy - th - margin;
+  if (tx < 4) tx = 4;
+  if (ty < 4) ty = 4;
+
+  tooltipEl.style.left    = tx + "px";
+  tooltipEl.style.top     = ty + "px";
+  tooltipEl.style.display = "block";
+}
+
+function hideTooltip() {
+  tooltipEl.style.display = "none";
+  tooltipFrame = null;
+}
+
+// ── Search / filter ───────────────────────────────────────────
+function applyFilter() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  if (q === "") {
+    visObjects = objects.map((_, i) => i);
+  } else {
+    const terms = q.split(/[,\s]+/).filter(Boolean);
+    visObjects = objects
+      .map((o, i) => ({ o, i }))
+      .filter(({ o }) => terms.some(t => o.includes(t)))
+      .map(({ i }) => i);
+  }
+  hoveredCell = null;
+  hideTooltip();
+  buildAll();
+  document.getElementById("subtitle").textContent =
+    `${dataset}  ·  ${frames.length} frames  ×  ${visObjects.length} / ${objects.length} objects shown`;
+}
+
+document.getElementById("search").addEventListener("input", applyFilter);
+document.getElementById("btn-reset-filter").addEventListener("click", () => {
+  document.getElementById("search").value = "";
+  applyFilter();
+});
+
+// ── Zoom control ──────────────────────────────────────────────
+const zoomRange = document.getElementById("zoom-range");
+const zoomVal   = document.getElementById("zoom-val");
+
+zoomRange.addEventListener("input", () => {
+  CELL = parseInt(zoomRange.value, 10);
+  zoomVal.textContent = CELL;
+  hoveredCell = null;
+  hideTooltip();
+  buildAll();
+});
+
+// ── Boot ──────────────────────────────────────────────────────
+loadData().catch(err => {
+  document.getElementById("loading").innerHTML =
+    `<p style="color:#ef4444">Failed to load data:<br>${err.message}</p>`;
+});
+</script>
+</body>
+</html>
