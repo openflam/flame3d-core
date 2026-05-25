@@ -2,10 +2,15 @@
 
 ## Dependencies
 
+### Most of the pipeline
+
 ```
 conda create -n flame3d-core python=3.12
 pip install -r requirements.txt
 ```
+
+### Sam3
+https://github.com/facebookresearch/sam3
 
 ## Process Data
 

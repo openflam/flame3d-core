@@ -12,3 +12,6 @@ open_clip_torch
 spacy
 torch
 scikit-learn
+
+# segment3d/postsam3_pipeline
+pycocotools
