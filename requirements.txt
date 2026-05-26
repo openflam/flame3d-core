@@ -15,3 +15,6 @@ scikit-learn
 
 # segment3d/postsam3_pipeline
 pycocotools
+
+# server
+flask

@@ -1,0 +1,22 @@
+services:
+  flame3d-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5005:5005"
+    volumes:
+      # Mount the entire project so code changes are picked up on restart
+      - .:/app
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    # GPU passthrough via NVIDIA Container Toolkit
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped

@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Project data and outputs (mounted separately or regenerated)
+data/
+outputs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Misc
+README.md
+*.md

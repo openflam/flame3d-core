@@ -1,16 +1,41 @@
 # Flame3D
 
-## Dependencies
+## Getting Started
 
-### Most of the pipeline
+### Prerequisites
 
+- Docker with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
+
+### Build & Run
+
+```bash
+# Build the Docker image (only needed once, or when dependencies change)
+docker compose build
+
+# Start the server
+docker compose up
+
+# Start in detached mode
+docker compose up -d
 ```
-conda create -n flame3d-core python=3.12
-pip install -r requirements.txt
+
+### Test
+
+```bash
+# Health check
+curl http://localhost:5005/health
+
+# Verify conda environments
+docker compose exec flame3d-core conda env list
 ```
 
-### Sam3
-https://github.com/facebookresearch/sam3
+### Development
+
+Code changes are volume-mounted into the container — just restart to pick them up:
+
+```bash
+docker compose restart
+```
 
 ## Process Data
 
