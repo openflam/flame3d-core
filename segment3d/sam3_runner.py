@@ -422,6 +422,32 @@ def run_sam3(
 
 
 # ---------------------------------------------------------------------------
+# Config-dict entry point
+# ---------------------------------------------------------------------------
+
+
+def run_sam3_from_config(config: dict) -> None:
+    """Run the SAM3 pipeline using the master config dictionary.
+
+    Reads ``config["dataset_name"]`` and ``config["sam3"]``.
+    """
+    dataset_name = config["dataset_name"]
+    sam_cfg = config.get("sam3", {})
+
+    objects_json = sam_cfg.get("objects_to_frames_path")
+    tmp_root_str = sam_cfg.get("tmp_root")
+
+    run_sam3(
+        dataset_name=dataset_name,
+        objects_filter=sam_cfg.get("objects_filter"),
+        resume=sam_cfg.get("resume", False),
+        objects_to_frames_path=Path(objects_json) if objects_json else None,
+        tmp_root=Path(tmp_root_str) if tmp_root_str else None,
+        save_images=sam_cfg.get("save_images", False),
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -433,7 +459,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--dataset",
-        required=True,
+        default=None,
         help="Dataset name (must match a folder under data/ and outputs/).",
     )
     parser.add_argument(
@@ -474,16 +500,33 @@ def _parse_args() -> argparse.Namespace:
             "the original frame, using SAM3's render_masklet_frame utility."
         ),
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Path to master_config.json (overrides other args)",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_sam3(
-        dataset_name=args.dataset,
-        objects_filter=args.objects,
-        resume=args.resume,
-        objects_to_frames_path=Path(args.objects_json) if args.objects_json else None,
-        tmp_root=Path(args.tmp_root) if args.tmp_root else None,
-        save_images=args.save_images,
-    )
+
+    if args.config:
+        import json as _json
+        with open(args.config, "r", encoding="utf-8") as f:
+            config = _json.load(f)
+        run_sam3_from_config(config)
+    else:
+        if args.dataset is None:
+            print("Error: --dataset is required when --config is not provided",
+                  file=sys.stderr)
+            sys.exit(1)
+        run_sam3(
+            dataset_name=args.dataset,
+            objects_filter=args.objects,
+            resume=args.resume,
+            objects_to_frames_path=Path(args.objects_json) if args.objects_json else None,
+            tmp_root=Path(args.tmp_root) if args.tmp_root else None,
+            save_images=args.save_images,
+        )

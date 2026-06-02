@@ -208,6 +208,23 @@ def identify_all_frames_cli(
         print(f"  Max: {max_objects}")
 
 
+def identify_all_frames_from_config(config: dict) -> None:
+    """Run the object identification pipeline using the master config dictionary.
+
+    Reads ``config["dataset_name"]`` and ``config["identify_objects"]``.
+    """
+    dataset_name = config["dataset_name"]
+    io_cfg = config.get("identify_objects", {})
+    identify_all_frames_cli(
+        dataset_name=dataset_name,
+        identifier_type=io_cfg.get("identifier_type", "vllm"),
+        model=io_cfg.get("model", "Qwen/Qwen3-VL-8B-Instruct"),
+        device=io_cfg.get("device", 0),
+        max_frames=io_cfg.get("max_frames"),
+        batch_size=io_cfg.get("batch_size", 32),
+    )
+
+
 def main() -> None:
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -216,7 +233,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         type=str,
-        required=True,
+        default=None,
         help="Name of the dataset to process",
     )
     parser.add_argument(
@@ -250,22 +267,36 @@ def main() -> None:
         default=32,
         help="Number of frames to process in each batch (default: 32)",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Path to master_config.json (overrides other args)",
+    )
 
     args = parser.parse_args()
 
-    if args.max_frames is not None and args.max_frames < 1:
-        parser.error("--max-frames must be at least 1")
-    if args.batch_size < 1:
-        parser.error("--batch-size must be at least 1")
+    if args.config:
+        import json
+        with open(args.config, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        identify_all_frames_from_config(config)
+    else:
+        if args.dataset is None:
+            parser.error("--dataset is required when --config is not provided")
+        if args.max_frames is not None and args.max_frames < 1:
+            parser.error("--max-frames must be at least 1")
+        if args.batch_size < 1:
+            parser.error("--batch-size must be at least 1")
 
-    identify_all_frames_cli(
-        dataset_name=args.dataset,
-        identifier_type=args.identifier_type,
-        model=args.model,
-        device=args.device,
-        max_frames=args.max_frames,
-        batch_size=args.batch_size,
-    )
+        identify_all_frames_cli(
+            dataset_name=args.dataset,
+            identifier_type=args.identifier_type,
+            model=args.model,
+            device=args.device,
+            max_frames=args.max_frames,
+            batch_size=args.batch_size,
+        )
 
 
 if __name__ == "__main__":

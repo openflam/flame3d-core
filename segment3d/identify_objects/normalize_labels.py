@@ -564,6 +564,59 @@ def normalize_inventory_cli(
     )
 
 
+def normalize_labels_from_config(config: dict) -> None:
+    """Run the full normalize-labels pipeline using the master config dictionary.
+
+    Reads ``config["dataset_name"]`` and ``config["normalize_labels"]``.
+    Runs: normalize → fill_holes → objects_to_frames (unless disabled).
+    """
+    dataset_name = config["dataset_name"]
+    nl_cfg = config.get("normalize_labels", {})
+
+    start_time = time.time()
+
+    normalize_inventory_cli(
+        dataset_name=dataset_name,
+        distance_threshold=nl_cfg.get("distance_threshold", 0.12),
+        clip_model=nl_cfg.get("clip_model", "ViT-B-32"),
+        clip_pretrained=nl_cfg.get("clip_pretrained", "openai"),
+        device=nl_cfg.get("device"),
+        skip_lemmatize=nl_cfg.get("skip_lemmatize", False),
+    )
+
+    if nl_cfg.get("fill_holes", True):
+        fill_holes_cli(
+            dataset_name=dataset_name,
+            max_gap=nl_cfg.get("max_gap", 3),
+        )
+
+    if nl_cfg.get("objects_to_frames", True):
+        objects_to_frames_cli(
+            dataset_name=dataset_name,
+            min_sequence_length=nl_cfg.get("min_sequence_length", 5),
+        )
+
+    end_time = time.time()
+    duration = end_time - start_time
+
+    step_stats = {
+        "duration_seconds": duration,
+        "status": "completed",
+        "parameters": {
+            "normalize_distance_threshold": nl_cfg.get("distance_threshold", 0.12),
+            "normalize_clip_model": nl_cfg.get("clip_model", "ViT-B-32"),
+            "normalize_clip_pretrained": nl_cfg.get("clip_pretrained", "openai"),
+            "normalize_skip_lemmatize": nl_cfg.get("skip_lemmatize", False),
+            "normalize_fill_holes": nl_cfg.get("fill_holes", True),
+            "normalize_max_gap": nl_cfg.get("max_gap", 3),
+            "normalize_objects_to_frames": nl_cfg.get("objects_to_frames", True),
+            "normalize_min_sequence_length": nl_cfg.get("min_sequence_length", 5),
+        }
+    }
+
+    save_runtime_stats(dataset_name, "normalize_labels", step_stats)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Normalize objects_inventory.json labels using lemmatization + "
@@ -572,7 +625,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         type=str,
-        required=True,
+        default=None,
         help="Name of the dataset to process.",
     )
     parser.add_argument(
@@ -635,48 +688,63 @@ def main() -> None:
         help="Minimum consecutive-frame run length to include in objects_to_frames.json "
         "(default: 5, i.e. sequences strictly longer than 5 frames).",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Path to master_config.json (overrides other args)",
+    )
 
     args = parser.parse_args()
 
-    start_time = time.time()
+    if args.config:
+        import json as _json
+        with open(args.config, "r", encoding="utf-8") as f:
+            config = _json.load(f)
+        normalize_labels_from_config(config)
+    else:
+        if args.dataset is None:
+            parser.error("--dataset is required when --config is not provided")
 
-    normalize_inventory_cli(
-        dataset_name=args.dataset,
-        distance_threshold=args.distance_threshold,
-        clip_model=args.clip_model,
-        clip_pretrained=args.clip_pretrained,
-        device=args.device,
-        skip_lemmatize=args.skip_lemmatize,
-    )
+        start_time = time.time()
 
-    if args.fill_holes:
-        fill_holes_cli(dataset_name=args.dataset, max_gap=args.max_gap)
-
-    if args.objects_to_frames:
-        objects_to_frames_cli(
+        normalize_inventory_cli(
             dataset_name=args.dataset,
-            min_sequence_length=args.min_sequence_length,
+            distance_threshold=args.distance_threshold,
+            clip_model=args.clip_model,
+            clip_pretrained=args.clip_pretrained,
+            device=args.device,
+            skip_lemmatize=args.skip_lemmatize,
         )
 
-    end_time = time.time()
-    duration = end_time - start_time
+        if args.fill_holes:
+            fill_holes_cli(dataset_name=args.dataset, max_gap=args.max_gap)
 
-    step_stats = {
-        "duration_seconds": duration,
-        "status": "completed",
-        "parameters": {
-            "normalize_distance_threshold": args.distance_threshold,
-            "normalize_clip_model": args.clip_model,
-            "normalize_clip_pretrained": args.clip_pretrained,
-            "normalize_skip_lemmatize": args.skip_lemmatize,
-            "normalize_fill_holes": args.fill_holes,
-            "normalize_max_gap": args.max_gap,
-            "normalize_objects_to_frames": args.objects_to_frames,
-            "normalize_min_sequence_length": args.min_sequence_length,
+        if args.objects_to_frames:
+            objects_to_frames_cli(
+                dataset_name=args.dataset,
+                min_sequence_length=args.min_sequence_length,
+            )
+
+        end_time = time.time()
+        duration = end_time - start_time
+
+        step_stats = {
+            "duration_seconds": duration,
+            "status": "completed",
+            "parameters": {
+                "normalize_distance_threshold": args.distance_threshold,
+                "normalize_clip_model": args.clip_model,
+                "normalize_clip_pretrained": args.clip_pretrained,
+                "normalize_skip_lemmatize": args.skip_lemmatize,
+                "normalize_fill_holes": args.fill_holes,
+                "normalize_max_gap": args.max_gap,
+                "normalize_objects_to_frames": args.objects_to_frames,
+                "normalize_min_sequence_length": args.min_sequence_length,
+            }
         }
-    }
-    
-    save_runtime_stats(args.dataset, "normalize_labels", step_stats)
+
+        save_runtime_stats(args.dataset, "normalize_labels", step_stats)
 
 
 if __name__ == "__main__":

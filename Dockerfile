@@ -43,6 +43,9 @@ RUN conda run -n flame3d-core pip install --no-cache-dir \
         -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
+# Download spaCy model
+RUN conda run -n flame3d-core python -m spacy download en_core_web_sm
+
 # ---- Create sam3 environment ------------------------------------------------
 RUN conda create -y -n sam3 python=3.12
 
@@ -54,6 +57,18 @@ RUN conda run -n sam3 pip install --no-cache-dir \
 # Clone SAM 3 and install in editable mode
 RUN git clone https://github.com/facebookresearch/sam3.git /opt/sam3 \
     && conda run -n sam3 pip install --no-cache-dir -e /opt/sam3
+
+# Install additional runner dependencies in sam3 env
+RUN conda run -n sam3 pip install --no-cache-dir orjson \
+    pycocotools \
+    "setuptools<82" \
+    Pillow \
+    psutil \
+    opencv-python-headless \
+    matplotlib \
+    pandas \
+    scikit-image \
+    scikit-learn
 
 # Optional: faster inference dependencies
 RUN conda run -n sam3 pip install --no-cache-dir einops ninja \

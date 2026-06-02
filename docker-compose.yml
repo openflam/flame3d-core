@@ -8,9 +8,12 @@ services:
     volumes:
       # Mount the entire project so code changes are picked up on restart
       - .:/app
+      # Persist HuggingFace model cache across container rebuilds
+      - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
+      - HF_TOKEN=${HF_TOKEN}
     # GPU passthrough via NVIDIA Container Toolkit
     deploy:
       resources:

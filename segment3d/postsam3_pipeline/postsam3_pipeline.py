@@ -480,6 +480,63 @@ def run_pipeline(
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Config-dict entry point
+# ---------------------------------------------------------------------------
+
+
+def run_pipeline_from_config(config: dict) -> None:
+    """Run the post-SAM3 pipeline using the master config dictionary.
+
+    Reads ``config["dataset_name"]`` and ``config["postsam3_pipeline"]``.
+    Any keys not present in the config fall back to ``DEFAULT_PARAMETERS``.
+    """
+    dataset_name = config["dataset_name"]
+    ps_cfg = config.get("postsam3_pipeline", {})
+
+    def _get(key: str):
+        return ps_cfg.get(key, DEFAULT_PARAMETERS.get(key))
+
+    run_pipeline(
+        dataset_name=dataset_name,
+        skip_association=ps_cfg.get("skip_association", False),
+        skip_graph=ps_cfg.get("skip_graph", False),
+        skip_clean=ps_cfg.get("skip_clean", False),
+        skip_bbox=ps_cfg.get("skip_bbox", False),
+        skip_segment_crops=ps_cfg.get("skip_segment_crops", False),
+        skip_caption=ps_cfg.get("skip_caption", True),
+        skip_clip=ps_cfg.get("skip_clip", False),
+        K=_get("K"),
+        tau=_get("tau"),
+        min_points=_get("min_points"),
+        min_points_in_3d_segment=_get("min_points_in_3d_segment"),
+        intersection_type=_get("intersection_type"),
+        voxel_size_cm=_get("voxel_size_cm"),
+        clip_distance_threshold=_get("clip_distance_threshold"),
+        save_segment_images=_get("save_segment_images"),
+        segment_dbscan_eps=_get("segment_dbscan_eps"),
+        segment_dbscan_min_samples=_get("segment_dbscan_min_samples"),
+        discard_objects_list=_get("discard_objects_list"),
+        component_dbscan_eps=_get("component_dbscan_eps"),
+        component_dbscan_min_samples=_get("component_dbscan_min_samples"),
+        component_dbscan_min_points=_get("component_dbscan_min_points"),
+        split_components=_get("split_components"),
+        percentile=_get("percentile"),
+        crop_type=_get("crop_type"),
+        top_n=_get("top_n"),
+        min_fraction=_get("min_fraction"),
+        caption_n_images=_get("caption_n_images"),
+        captioner_type=_get("captioner_type"),
+        caption_model=_get("caption_model"),
+        caption_device=_get("caption_device"),
+        caption_batch_size=_get("caption_batch_size"),
+        clip_model=_get("clip_model"),
+        clip_pretrained=_get("clip_pretrained"),
+        clip_batch_size=_get("clip_batch_size"),
+        clip_device=_get("clip_device"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run the post-SAM3 per-object pipeline",
@@ -502,8 +559,16 @@ Configuration:
     parser.add_argument(
         "--dataset",
         type=str,
-        required=True,
-        help="Dataset to process (required)",
+        default=None,
+        help="Dataset to process",
+    )
+
+    # Config file
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Path to master_config.json (overrides other args)",
     )
 
     # Skip flags
@@ -543,269 +608,25 @@ Configuration:
         help="Skip CLIP embedding generation step",
     )
 
-    # Mask graph parameters
-    parser.add_argument(
-        "--K",
-        type=int,
-        default=DEFAULT_PARAMETERS["K"],
-        help=f"Min overlap count threshold for mask graph edges (default: {DEFAULT_PARAMETERS['K']})",
-    )
-    parser.add_argument(
-        "--tau",
-        type=float,
-        default=DEFAULT_PARAMETERS["tau"],
-        help=f"Min Jaccard similarity threshold for mask graph edges (default: {DEFAULT_PARAMETERS['tau']})",
-    )
-    parser.add_argument(
-        "--min-points",
-        type=int,
-        default=DEFAULT_PARAMETERS["min_points"],
-        help=f"Min 3D points for a node to be included in the graph (default: {DEFAULT_PARAMETERS['min_points']})",
-    )
-    parser.add_argument(
-        "--min-points-in-3d-segment",
-        type=int,
-        default=DEFAULT_PARAMETERS["min_points_in_3d_segment"],
-        help=f"Min 3D points in a connected component to be reported (default: {DEFAULT_PARAMETERS['min_points_in_3d_segment']})",
-    )
-
-    # Segment-level DBSCAN parameters (2D-3D association)
-    parser.add_argument(
-        "--segment-dbscan-eps",
-        type=float,
-        default=DEFAULT_PARAMETERS["segment_dbscan_eps"],
-        help=f"Segment-level DBSCAN neighbourhood radius for 2D-3D association noise filtering (default: {DEFAULT_PARAMETERS['segment_dbscan_eps']})",
-    )
-    parser.add_argument(
-        "--segment-dbscan-min-samples",
-        type=int,
-        default=DEFAULT_PARAMETERS["segment_dbscan_min_samples"],
-        help=f"Segment-level DBSCAN minimum samples per core point (default: {DEFAULT_PARAMETERS['segment_dbscan_min_samples']})",
-    )
-    parser.add_argument(
-        "--discard-objects",
-        nargs="+",
-        default=DEFAULT_PARAMETERS["discard_objects_list"],
-        metavar="LABEL",
-        help=f"Object labels (case-insensitive) to exclude from 2D-3D association "
-        f"(default: {DEFAULT_PARAMETERS['discard_objects_list']})",
-    )
-
-    # Mask graph intersection type
-    parser.add_argument(
-        "--intersection-type",
-        choices=["geometric", "id_based"],
-        default=DEFAULT_PARAMETERS["intersection_type"],
-        help=f"How to measure instance overlap: 'geometric' (voxel Jaccard) or 'id_based' (point-ID Jaccard) "
-        f"(default: {DEFAULT_PARAMETERS['intersection_type']})",
-    )
-    parser.add_argument(
-        "--voxel-size-cm",
-        type=float,
-        default=DEFAULT_PARAMETERS["voxel_size_cm"],
-        help=f"Voxel side length in centimetres used when --intersection-type=geometric "
-        f"(point coordinates assumed in metres; default: {DEFAULT_PARAMETERS['voxel_size_cm']})",
-    )
-    parser.add_argument(
-        "--clip-distance-threshold",
-        type=float,
-        default=DEFAULT_PARAMETERS["clip_distance_threshold"],
-        metavar="DIST",
-        help=f"Maximum cosine distance between OpenCLIP ViT-H-14 image embeddings for two "
-        f"nodes to be merged.  Range (0, 1] (default: {DEFAULT_PARAMETERS['clip_distance_threshold']}).",
-    )
-    parser.add_argument(
-        "--save-segment-images",
-        action="store_true",
-        default=DEFAULT_PARAMETERS["save_segment_images"],
-        help="Save each node's representative masked-crop image to "
-        "outputs/{dataset}/graph_node_mask_images/ for visual inspection.",
-    )
-
-    # Clean components parameters (component-level DBSCAN)
-    parser.add_argument(
-        "--component-dbscan-eps",
-        type=float,
-        default=DEFAULT_PARAMETERS["component_dbscan_eps"],
-        help=f"Component-level DBSCAN neighbourhood radius in world units (default: {DEFAULT_PARAMETERS['component_dbscan_eps']})",
-    )
-    parser.add_argument(
-        "--component-dbscan-min-samples",
-        type=int,
-        default=DEFAULT_PARAMETERS["component_dbscan_min_samples"],
-        help=f"Component-level DBSCAN minimum samples per core point (default: {DEFAULT_PARAMETERS['component_dbscan_min_samples']})",
-    )
-    parser.add_argument(
-        "--component-dbscan-min-points",
-        type=int,
-        default=DEFAULT_PARAMETERS["component_dbscan_min_points"],
-        help=f"Drop components with fewer than this many points after cleaning (default: {DEFAULT_PARAMETERS['component_dbscan_min_points']})",
-    )
-    parser.add_argument(
-        "--split-components",
-        action="store_true",
-        default=DEFAULT_PARAMETERS["split_components"],
-        help="Split components with multiple DBSCAN clusters into separate components (default: False)",
-    )
-
-    # Bounding box parameters
-    parser.add_argument(
-        "--percentile",
-        type=float,
-        default=DEFAULT_PARAMETERS["percentile"],
-        help=f"Percentile threshold for bbox outlier removal (default: {DEFAULT_PARAMETERS['percentile']})",
-    )
-
-    # Segment crops parameters
-    parser.add_argument(
-        "--crop-type",
-        choices=["segment", "bbox"],
-        default=DEFAULT_PARAMETERS["crop_type"],
-        help=f"Cropping method: 'segment' uses per-object mask crops (segment_crops.py); "
-        f"'bbox' projects 3D bounding box to 2D and crops to that region "
-        f"(project_bbox + crop_images, as in main.py). "
-        f"(default: {DEFAULT_PARAMETERS['crop_type']})",
-    )
-    parser.add_argument(
-        "--top-n",
-        type=int,
-        default=DEFAULT_PARAMETERS["top_n"],
-        help=f"Number of top frames to crop per component (default: {DEFAULT_PARAMETERS['top_n']})",
-    )
-    parser.add_argument(
-        "--min-fraction",
-        type=float,
-        default=DEFAULT_PARAMETERS["min_fraction"],
-        help=f"Minimum visibility fraction to consider a frame for cropping (default: {DEFAULT_PARAMETERS['min_fraction']})",
-    )
-
-    # Captioning parameters
-    parser.add_argument(
-        "--caption-n-images",
-        type=int,
-        default=DEFAULT_PARAMETERS["caption_n_images"],
-        help=f"Number of top images to use for captioning (default: {DEFAULT_PARAMETERS['caption_n_images']})",
-    )
-    parser.add_argument(
-        "--captioner-type",
-        type=str,
-        default=DEFAULT_PARAMETERS["captioner_type"],
-        help=f"Type of captioner to use (default: {DEFAULT_PARAMETERS['captioner_type']})",
-    )
-    parser.add_argument(
-        "--caption-model",
-        type=str,
-        default=DEFAULT_PARAMETERS["caption_model"],
-        help=f"VLM model to use for captioning (default: {DEFAULT_PARAMETERS['caption_model']})",
-    )
-    parser.add_argument(
-        "--caption-device",
-        type=int,
-        default=DEFAULT_PARAMETERS["caption_device"],
-        help=f"GPU device ID for captioning (default: {DEFAULT_PARAMETERS['caption_device']})",
-    )
-    parser.add_argument(
-        "--caption-batch-size",
-        type=int,
-        default=DEFAULT_PARAMETERS["caption_batch_size"],
-        help=f"Batch size for captioning inference (default: {DEFAULT_PARAMETERS['caption_batch_size']})",
-    )
-
-    # CLIP embedding parameters
-    parser.add_argument(
-        "--clip-model",
-        type=str,
-        default=DEFAULT_PARAMETERS["clip_model"],
-        help=f"OpenCLIP model name for embeddings (default: {DEFAULT_PARAMETERS['clip_model']})",
-    )
-    parser.add_argument(
-        "--clip-pretrained",
-        type=str,
-        default=DEFAULT_PARAMETERS["clip_pretrained"],
-        help=f"Pretrained weights for CLIP model (default: {DEFAULT_PARAMETERS['clip_pretrained']})",
-    )
-    parser.add_argument(
-        "--clip-batch-size",
-        type=int,
-        default=DEFAULT_PARAMETERS["clip_batch_size"],
-        help=f"Batch size for CLIP embedding generation (default: {DEFAULT_PARAMETERS['clip_batch_size']})",
-    )
-    parser.add_argument(
-        "--clip-device",
-        type=int,
-        default=DEFAULT_PARAMETERS["clip_device"],
-        help=f"GPU device ID for CLIP embeddings (default: {DEFAULT_PARAMETERS['clip_device']})",
-    )
-
     args = parser.parse_args()
 
-    # Validate parameters
-    if args.tau <= 0 or args.tau > 1:
-        parser.error("--tau must be between 0 and 1")
-    if args.min_fraction <= 0 or args.min_fraction > 1:
-        parser.error("--min-fraction must be between 0 and 1")
-    if args.K < 1:
-        parser.error("--K must be at least 1")
-    if args.min_points < 1:
-        parser.error("--min-points must be at least 1")
-    if args.min_points_in_3d_segment < 1:
-        parser.error("--min-points-in-3d-segment must be at least 1")
-    if args.top_n < 1:
-        parser.error("--top-n must be at least 1")
-    if args.caption_n_images < 1:
-        parser.error("--caption-n-images must be at least 1")
-    if args.caption_batch_size < 1:
-        parser.error("--caption-batch-size must be at least 1")
-    if args.clip_batch_size < 1:
-        parser.error("--clip-batch-size must be at least 1")
-    if args.percentile <= 0 or args.percentile > 100:
-        parser.error("--percentile must be between 0 and 100")
-    if args.segment_dbscan_eps <= 0:
-        parser.error("--segment-dbscan-eps must be positive")
-    if args.segment_dbscan_min_samples < 1:
-        parser.error("--segment-dbscan-min-samples must be at least 1")
-    if args.component_dbscan_eps <= 0:
-        parser.error("--component-dbscan-eps must be positive")
-    if args.component_dbscan_min_samples < 1:
-        parser.error("--component-dbscan-min-samples must be at least 1")
-    if args.component_dbscan_min_points < 1:
-        parser.error("--component-dbscan-min-points must be at least 1")
+    if args.config:
+        import json as _json
+        with open(args.config, "r", encoding="utf-8") as f:
+            config = _json.load(f)
+        run_pipeline_from_config(config)
+    else:
+        if args.dataset is None:
+            parser.error("--dataset is required when --config is not provided")
 
-    run_pipeline(
-        dataset_name=args.dataset,
-        skip_association=args.skip_association,
-        skip_graph=args.skip_graph,
-        skip_clean=args.skip_clean,
-        skip_bbox=args.skip_bbox,
-        skip_segment_crops=args.skip_segment_crops,
-        skip_caption=args.skip_caption,
-        skip_clip=args.skip_clip,
-        K=args.K,
-        tau=args.tau,
-        min_points=args.min_points,
-        min_points_in_3d_segment=args.min_points_in_3d_segment,
-        segment_dbscan_eps=args.segment_dbscan_eps,
-        segment_dbscan_min_samples=args.segment_dbscan_min_samples,
-        discard_objects_list=args.discard_objects,
-        component_dbscan_eps=args.component_dbscan_eps,
-        component_dbscan_min_samples=args.component_dbscan_min_samples,
-        component_dbscan_min_points=args.component_dbscan_min_points,
-        split_components=args.split_components,
-        percentile=args.percentile,
-        crop_type=args.crop_type,
-        top_n=args.top_n,
-        min_fraction=args.min_fraction,
-        caption_n_images=args.caption_n_images,
-        captioner_type=args.captioner_type,
-        caption_model=args.caption_model,
-        caption_device=args.caption_device,
-        caption_batch_size=args.caption_batch_size,
-        clip_model=args.clip_model,
-        clip_pretrained=args.clip_pretrained,
-        clip_batch_size=args.clip_batch_size,
-        clip_device=args.clip_device,
-        intersection_type=args.intersection_type,
-        voxel_size_cm=args.voxel_size_cm,
-        clip_distance_threshold=args.clip_distance_threshold,
-        save_segment_images=args.save_segment_images,
-    )
+        run_pipeline(
+            dataset_name=args.dataset,
+            skip_association=args.skip_association,
+            skip_graph=args.skip_graph,
+            skip_clean=args.skip_clean,
+            skip_bbox=args.skip_bbox,
+            skip_segment_crops=args.skip_segment_crops,
+            skip_caption=args.skip_caption,
+            skip_clip=args.skip_clip,
+        )
+

@@ -255,6 +255,25 @@ def caption_all_components_cli(
         print(f"  Max length: {max(caption_lengths)} characters")
 
 
+
+def caption_all_from_config(config: dict) -> None:
+    """Run the captioning pipeline using the master config dictionary.
+
+    Reads ``config["dataset_name"]`` and ``config["captioning"]``.
+    """
+    dataset_name = config["dataset_name"]
+    cap_cfg = config.get("captioning", {})
+    caption_all_components_cli(
+        dataset_name=dataset_name,
+        n_images=cap_cfg.get("n_images", 1),
+        captioner_type=cap_cfg.get("captioner_type", "vllm"),
+        model=cap_cfg.get("model", "Qwen/Qwen2.5-VL-7B-Instruct"),
+        device=cap_cfg.get("device", 0),
+        max_components=cap_cfg.get("max_components"),
+        batch_size=cap_cfg.get("batch_size", 512),
+    )
+
+
 def main() -> None:
     """Main entry point for CLI."""
 
@@ -264,7 +283,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         type=str,
-        required=True,
+        default=None,
         help="Name of the dataset to process",
     )
     parser.add_argument(
@@ -303,27 +322,38 @@ def main() -> None:
         default=512,
         help="Number of components to process in each batch (default: 512)",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Path to master_config.json (overrides other args)",
+    )
 
     args = parser.parse_args()
 
-    if args.n_images < 1:
-        parser.error("--n-images must be at least 1")
+    if args.config:
+        with open(args.config, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        caption_all_from_config(config)
+    else:
+        if args.dataset is None:
+            parser.error("--dataset is required when --config is not provided")
+        if args.n_images < 1:
+            parser.error("--n-images must be at least 1")
+        if args.max_components is not None and args.max_components < 1:
+            parser.error("--max-components must be at least 1")
+        if args.batch_size < 1:
+            parser.error("--batch-size must be at least 1")
 
-    if args.max_components is not None and args.max_components < 1:
-        parser.error("--max-components must be at least 1")
-
-    if args.batch_size < 1:
-        parser.error("--batch-size must be at least 1")
-
-    caption_all_components_cli(
-        dataset_name=args.dataset,
-        n_images=args.n_images,
-        captioner_type=args.captioner_type,
-        model=args.model,
-        device=args.device,
-        max_components=args.max_components,
-        batch_size=args.batch_size,
-    )
+        caption_all_components_cli(
+            dataset_name=args.dataset,
+            n_images=args.n_images,
+            captioner_type=args.captioner_type,
+            model=args.model,
+            device=args.device,
+            max_components=args.max_components,
+            batch_size=args.batch_size,
+        )
 
 
 if __name__ == "__main__":

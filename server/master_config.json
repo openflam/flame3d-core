@@ -1,0 +1,91 @@
+{
+  "dataset_name": "ProjectStudioTemp",
+  "data_source": "polycam",
+  "start_from_step": null,
+
+  "polycam": {
+    "depth_tolerance": 0.05
+  },
+
+  "identify_objects": {
+    "identifier_type": "vllm",
+    "model": "Qwen/Qwen3-VL-8B-Instruct",
+    "device": 0,
+    "max_frames": null,
+    "batch_size": 32
+  },
+
+  "normalize_labels": {
+    "distance_threshold": 0.12,
+    "clip_model": "ViT-B-32",
+    "clip_pretrained": "openai",
+    "device": null,
+    "skip_lemmatize": false,
+    "fill_holes": true,
+    "max_gap": 3,
+    "objects_to_frames": true,
+    "min_sequence_length": 5
+  },
+
+  "sam3": {
+    "objects_filter": null,
+    "resume": false,
+    "objects_to_frames_path": null,
+    "tmp_root": null,
+    "save_images": false
+  },
+
+  "postsam3_pipeline": {
+    "skip_association": false,
+    "skip_graph": false,
+    "skip_clean": false,
+    "skip_bbox": false,
+    "skip_segment_crops": false,
+    "skip_caption": true,
+    "skip_clip": false,
+
+    "discard_objects_list": ["wall", "walls", "floor", "ceiling", "window"],
+    "segment_dbscan_eps": 0.5,
+    "segment_dbscan_min_samples": 5,
+
+    "intersection_type": "geometric",
+    "voxel_size_cm": 50.0,
+    "K": 5,
+    "tau": 0.4,
+    "clip_distance_threshold": 0.3,
+    "save_segment_images": true,
+    "min_points": 1,
+    "min_points_in_3d_segment": 10,
+
+    "component_dbscan_eps": 0.5,
+    "component_dbscan_min_samples": 5,
+    "component_dbscan_min_points": 20,
+    "split_components": true,
+
+    "percentile": 95.0,
+
+    "crop_type": "segment",
+    "top_n": 5,
+    "min_fraction": 0.05,
+
+    "caption_n_images": 1,
+    "captioner_type": "vllm",
+    "caption_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "caption_device": 0,
+    "caption_batch_size": 32,
+
+    "clip_model": "ViT-H-14",
+    "clip_pretrained": "laion2B-s32B-b79K",
+    "clip_batch_size": 32,
+    "clip_device": 0
+  },
+
+  "captioning": {
+    "n_images": 1,
+    "captioner_type": "vllm",
+    "model": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "device": 0,
+    "max_components": null,
+    "batch_size": 512
+  }
+}
