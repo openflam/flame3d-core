@@ -18,3 +18,7 @@ pycocotools
 
 # server
 flask
+
+# task queue (Celery + RabbitMQ broker + Redis result backend)
+celery
+redis

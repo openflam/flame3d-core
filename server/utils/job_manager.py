@@ -1,189 +1,102 @@
-"""job_manager.py – Run data-processing pipelines in the background and track
-their live progress so the frontend can poll for status.
+"""job_manager.py – Celery-backed job management.
 
-A single :class:`JobManager` instance holds an in-memory registry of jobs.
-Each job runs :func:`server.utils.data_process.process_data` on a daemon
-thread, and a progress callback updates the job's per-step status as the
-pipeline advances.  The frontend polls ``GET /api/jobs/<id>`` to render a
-stepper.
+Pipeline runs are dispatched onto a Celery task queue (RabbitMQ broker) and
+their live progress is read back from the Redis result backend.  The Flask web
+process only *sends* tasks (by name) and *reads* results — the heavy pipeline,
+along with its ML import stack, executes in a separate Celery worker process.
+See :mod:`server.utils.tasks` for the task itself and :mod:`server.celery_app`
+for the broker/backend wiring.
 
-State is in-memory only — it is reset whenever the Flask process restarts.
-That is acceptable for a single-user dev tool; persisting jobs would require a
-database and is out of scope here.
+State therefore survives Flask restarts (it lives in Redis), and multiple web
+workers can serve status for the same job.
 """
 
 from __future__ import annotations
 
-import threading
-import time
-import traceback
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-# NOTE: `data_process` pulls in the full ML stack (torch, vllm, open3d, …) at
-# import time. We import it lazily inside the methods below so the Flask server
-# boots quickly and only loads those heavy deps when a job actually runs.
+from celery.result import AsyncResult
 
+from server.celery_app import celery_app
 
-# ── Status constants ───────────────────────────────────────────────────────
+# ── Logical statuses returned to the frontend ──────────────────────────────
 
 STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 
+# Celery task name (must match the @task(name=...) in server.utils.tasks).
+_TASK_NAME = "run_pipeline"
+
+
+def _empty_job(job_id: str) -> Dict[str, Any]:
+    """A normalized snapshot for a job with no progress meta yet."""
+    return {
+        "id": job_id,
+        "dataset_name": "",
+        "data_source": "",
+        "status": STATUS_PENDING,
+        "steps": [],
+        "error": None,
+    }
+
 
 class JobManager:
-    """Thread-safe registry of background pipeline jobs."""
+    """Dispatches pipeline jobs to Celery and normalizes their status."""
 
-    def __init__(self) -> None:
-        self._jobs: Dict[str, Dict[str, Any]] = {}
-        self._lock = threading.Lock()
+    def create_job(self, config: Dict[str, Any], config_path: str) -> str:
+        """Enqueue a pipeline run and return its Celery task id (= job id)."""
+        result = celery_app.send_task(_TASK_NAME, args=[config, config_path])
+        return result.id
 
-    # ── Creation ───────────────────────────────────────────────────────────
+    def get_job(self, job_id: str) -> Dict[str, Any]:
+        """Return a normalized snapshot of a job's progress.
 
-    def create_job(
-        self,
-        config: Dict[str, Any],
-        config_path: str,
-    ) -> str:
-        """Register a new job and kick off its background thread.
-
-        Returns the generated job id.
+        Maps Celery's task states onto the ``{id, dataset_name, data_source,
+        status, steps, error}`` shape the frontend consumes.  Note that Celery
+        cannot distinguish an unknown id from a still-queued one — both report
+        as ``pending``.
         """
-        from server.utils.data_process import get_pipeline_steps
+        res = AsyncResult(job_id, app=celery_app)
+        state = res.state
+        job = _empty_job(job_id)
 
-        job_id = uuid.uuid4().hex
-        data_source = config["data_source"]
+        # Queued (or unknown) — no worker has touched it yet.
+        if state == "PENDING":
+            return job
 
-        # Pre-build the step list so the UI can show every step up front.
-        steps = get_pipeline_steps(data_source)
-        start_from = config.get("start_from_step")
-        step_names = [s.name for s in steps]
-        skip_before = (
-            step_names.index(start_from)
-            if start_from in step_names
-            else 0
-        )
+        # Picked up but no custom progress published yet.
+        if state in ("RECEIVED", "STARTED", "RETRY"):
+            job["status"] = STATUS_RUNNING
+            return job
 
-        step_records: List[Dict[str, Any]] = []
-        for idx, step in enumerate(steps):
-            # Steps before start_from_step are reported as skipped.
-            status = "skipped" if idx < skip_before else STATUS_PENDING
-            step_records.append({
-                "name": step.name,
-                "description": step.description,
-                "status": status,
-                "duration_seconds": None,
-                "error": None,
-            })
+        info = res.info  # PROGRESS → meta dict; SUCCESS → return value; FAILURE → exc
 
-        job = {
-            "id": job_id,
-            "dataset_name": config["dataset_name"],
-            "data_source": data_source,
-            "status": STATUS_RUNNING,
-            "steps": step_records,
-            "error": None,
-            "created_at": time.time(),
-            "finished_at": None,
-        }
+        # Hard failure (unhandled exception) — no rich meta survives.
+        if state == "FAILURE":
+            job["status"] = STATUS_FAILED
+            job["error"] = str(info) if info else "Task failed"
+            return job
 
-        with self._lock:
-            self._jobs[job_id] = job
-
-        thread = threading.Thread(
-            target=self._run,
-            args=(job_id, config, config_path),
-            daemon=True,
-        )
-        thread.start()
-
-        return job_id
-
-    # ── Background execution ───────────────────────────────────────────────
-
-    def _run(
-        self,
-        job_id: str,
-        config: Dict[str, Any],
-        config_path: str,
-    ) -> None:
-        """Execute the pipeline, updating job state as steps progress."""
-        from server.utils.data_process import process_data
-
-        def on_progress(event: Dict[str, Any]) -> None:
-            kind = event.get("event")
-            name = event.get("name")
-            with self._lock:
-                job = self._jobs.get(job_id)
-                if job is None:
-                    return
-                for record in job["steps"]:
-                    if record["name"] != name:
-                        continue
-                    if kind == "step_start":
-                        record["status"] = STATUS_RUNNING
-                    elif kind == "step_complete":
-                        record["status"] = (
-                            STATUS_COMPLETED
-                            if event.get("success")
-                            else STATUS_FAILED
-                        )
-                        record["duration_seconds"] = event.get("duration_seconds")
-                        record["error"] = event.get("error")
-                    break
-
-        try:
-            result = process_data(
-                config,
-                config_path=config_path,
-                progress_callback=on_progress,
+        # PROGRESS or SUCCESS both carry our meta dict.
+        if isinstance(info, dict):
+            job.update(
+                {
+                    "dataset_name": info.get("dataset_name") or "",
+                    "data_source": info.get("data_source") or "",
+                    "status": info.get(
+                        "status",
+                        STATUS_COMPLETED if state == "SUCCESS" else STATUS_RUNNING,
+                    ),
+                    "steps": info.get("steps", []),
+                    "error": info.get("error"),
+                }
             )
-            with self._lock:
-                job = self._jobs.get(job_id)
-                if job is not None:
-                    job["status"] = (
-                        STATUS_COMPLETED if result.success else STATUS_FAILED
-                    )
-                    job["finished_at"] = time.time()
-                    if not result.success and job["error"] is None:
-                        # Surface the first failing step's error.
-                        failed = next(
-                            (s for s in job["steps"]
-                             if s["status"] == STATUS_FAILED),
-                            None,
-                        )
-                        job["error"] = (
-                            failed["error"] if failed else "Pipeline failed"
-                        )
-        except Exception as exc:  # noqa: BLE001 — report any failure to the UI
-            traceback.print_exc()
-            with self._lock:
-                job = self._jobs.get(job_id)
-                if job is not None:
-                    job["status"] = STATUS_FAILED
-                    job["error"] = str(exc)
-                    job["finished_at"] = time.time()
-                    # Mark any still-running step as failed.
-                    for record in job["steps"]:
-                        if record["status"] == STATUS_RUNNING:
-                            record["status"] = STATUS_FAILED
-                            record["error"] = str(exc)
+        elif state == "SUCCESS":
+            job["status"] = STATUS_COMPLETED
 
-    # ── Queries ────────────────────────────────────────────────────────────
-
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Return a snapshot of the job, or ``None`` if unknown."""
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                return None
-            # Return a shallow copy so callers can't mutate internal state.
-            return {
-                **job,
-                "steps": [dict(s) for s in job["steps"]],
-            }
+        return job
 
 
 # Module-level singleton shared across requests.

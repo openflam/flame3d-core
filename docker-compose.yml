@@ -1,38 +1,106 @@
+# =============================================================================
+# flame3d-core stack
+#   server              : Flask API (enqueues jobs, serves status)
+#   segmentation-worker : Celery worker that runs the GPU pipeline
+#   rabbitmq            : Celery broker (task queue)
+#   redis               : Celery result backend (job status + live progress)
+#   frontend            : Vite dev server
+# =============================================================================
+
+# Shared config for the two GPU/conda services (Flask app + Celery worker).
+# They use the same image, project mount, GPU passthrough and Celery wiring;
+# only their command (and the app's published port) differ.
+x-flame-base: &flame-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    # Mount the entire project so code changes are picked up on restart
+    - .:/app
+    # Persist HuggingFace model cache across container rebuilds
+    - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
+  environment:
+    - FLASK_ENV=development
+    - FLASK_DEBUG=1
+    - HF_TOKEN=${HF_TOKEN}
+    - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+  # GPU passthrough via NVIDIA Container Toolkit
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  shm_size: '16gb'
+  # Allow unlimited locked (pinned) memory and a large stack.
+  # vLLM stages model weights into the GPU via pinned host memory; Docker's
+  # default memlock limit (8 MB) forces a pathologically slow pageable-copy
+  # fallback (~50 MB/s), making weight loading take minutes instead of seconds.
+  # These match NVIDIA's recommended container ulimits.
+  ulimits:
+    memlock: -1
+    stack: 67108864
+  restart: unless-stopped
+
 services:
-  flame3d-core:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  # ── Message broker ────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
     ports:
-      - "5005:5005"
-    volumes:
-      # Mount the entire project so code changes are picked up on restart
-      - .:/app
-      # Persist HuggingFace model cache across container rebuilds
-      - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # management UI (http://localhost:15672, guest/guest)
     environment:
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
-      - HF_TOKEN=${HF_TOKEN}
-    # GPU passthrough via NVIDIA Container Toolkit
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    shm_size: '16gb'
-    # Allow unlimited locked (pinned) memory and a large stack.
-    # vLLM stages model weights into the GPU via pinned host memory; Docker's
-    # default memlock limit (8 MB) forces a pathologically slow pageable-copy
-    # fallback (~50 MB/s), making weight loading take minutes instead of seconds.
-    # These match NVIDIA's recommended container ulimits.
-    ulimits:
-      memlock: -1
-      stack: 67108864
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
+  # ── Result backend ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Flask API ─────────────────────────────────────────────────────────────
+  server:
+    <<: *flame-base
+    ports:
+      - "5005:5005"
+    # Default command from the Dockerfile (flask run) is used.
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Celery worker (runs the GPU pipeline) ─────────────────────────────────
+  segmentation-worker:
+    <<: *flame-base
+    # Run the Celery worker inside the flame3d-core conda env. Concurrency 1:
+    # the pipeline saturates the GPU, so only one job runs at a time.
+    command: >
+      conda run --no-capture-output -n flame3d-core
+      celery -A server.celery_app:celery_app worker
+      --loglevel=info --concurrency=1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Frontend (Vite dev server) ────────────────────────────────────────────
   frontend:
     image: node:20-alpine
     working_dir: /app/frontend
@@ -47,7 +115,7 @@ services:
       - /app/frontend/node_modules
     environment:
       # Proxy /api requests to the Flask service over the compose network.
-      - VITE_API_TARGET=http://flame3d-core:5005
+      - VITE_API_TARGET=http://server:5005
     depends_on:
-      - flame3d-core
+      - server
     restart: unless-stopped
