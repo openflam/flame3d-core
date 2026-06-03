@@ -6,6 +6,8 @@ GET  /api/config              → default master_config.json contents
 GET  /api/steps?source=...    → ordered pipeline steps for a data source
 POST /api/upload              → save uploaded zip + config, start pipeline
 GET  /api/jobs/<job_id>       → live status of a running/finished job
+GET  /api/datasets            → all datasets + their index status
+GET  /api/datasets/<name>     → a single dataset's index row
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from config_io import get_data_path
+from config_io import PATHS, get_data_path
+from server.database import get_dataset, list_datasets, reconcile_existing
 from server.utils.job_manager import job_manager
 
 processing_bp = Blueprint("processing", __name__, url_prefix="/api")
@@ -105,3 +108,26 @@ def get_job_status(job_id: str):
     if job is None:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job), 200
+
+
+@processing_bp.route("/datasets", methods=["GET"])
+def get_datasets():
+    """Return all datasets and their status.
+
+    On-disk dataset directories that predate the index are reconciled in as
+    ``complete`` so they appear in the list too.
+    """
+    data_root = PATHS["data"]
+    if data_root.is_dir():
+        existing = [p.name for p in data_root.iterdir() if p.is_dir()]
+        reconcile_existing(existing)
+    return jsonify(list_datasets()), 200
+
+
+@processing_bp.route("/datasets/<name>", methods=["GET"])
+def get_dataset_status(name: str):
+    """Return a single dataset's index row."""
+    dataset = get_dataset(name)
+    if dataset is None:
+        return jsonify({"error": "Dataset not found"}), 404
+    return jsonify(dataset), 200

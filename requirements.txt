@@ -22,3 +22,6 @@ flask
 # task queue (Celery + RabbitMQ broker + Redis result backend)
 celery
 redis
+
+# dataset index (Postgres / PostGIS)
+psycopg2-binary

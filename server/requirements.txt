@@ -4,9 +4,11 @@
 # pipeline, so it needs none of the heavy ML stack in the repo-root
 # requirements.txt (torch, vLLM, open3d, SAM3, …).
 #
-#   flask  – web framework / app factory
-#   celery – task client (send_task to RabbitMQ, read AsyncResult)
-#   redis  – client for the Celery result backend
+#   flask          – web framework / app factory
+#   celery         – task client (send_task to RabbitMQ, read AsyncResult)
+#   redis          – client for the Celery result backend
+#   psycopg2-binary – Postgres/PostGIS client (dataset index)
 flask
 celery
 redis
+psycopg2-binary

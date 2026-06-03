@@ -116,6 +116,17 @@ def run_pipeline_task(
                 record["status"] = STATUS_FAILED
                 record["error"] = str(exc)
 
+    # Flip the durable dataindex row to its terminal status. Wrapped so a DB
+    # hiccup never masks the pipeline result (which still rides back in meta).
+    try:
+        from server.database import STATUS_COMPLETE, STATUS_FAILED as DB_FAILED
+        from server.database import set_status
+
+        db_status = STATUS_COMPLETE if meta["status"] == STATUS_COMPLETED else DB_FAILED
+        set_status(config["dataset_name"], db_status, error=meta.get("error"))
+    except Exception:  # noqa: BLE001 — index update is best-effort
+        traceback.print_exc()
+
     # Returning the meta marks the Celery task SUCCESS with result == meta;
     # the logical pass/fail lives in meta["status"].
     return meta

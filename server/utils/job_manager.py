@@ -46,9 +46,23 @@ class JobManager:
     """Dispatches pipeline jobs to Celery and normalizes their status."""
 
     def create_job(self, config: Dict[str, Any], config_path: str) -> str:
-        """Enqueue a pipeline run and return its Celery task id (= job id)."""
+        """Enqueue a pipeline run and return its Celery task id (= job id).
+
+        Also records the dataset as ``processing`` in the durable dataindex
+        table so it shows up in the dataset list immediately.  The worker
+        flips it to ``complete`` / ``failed`` when the run finishes.
+        """
+        from server.database import upsert_processing
+
         result = celery_app.send_task(_TASK_NAME, args=[config, config_path])
-        return result.id
+        job_id = result.id
+
+        upsert_processing(
+            dataset_name=config["dataset_name"],
+            data_source=config.get("data_source"),
+            job_id=job_id,
+        )
+        return job_id
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
         """Return a normalized snapshot of a job's progress.

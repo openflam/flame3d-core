@@ -35,6 +35,18 @@ export interface Job {
   error: string | null;
 }
 
+export type DatasetStatus = "processing" | "complete" | "failed";
+
+export interface Dataset {
+  dataset_name: string;
+  data_source: string | null;
+  status: DatasetStatus;
+  job_id: string | null;
+  error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 async function asJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
@@ -67,4 +79,12 @@ export async function uploadAndProcess(
 
 export async function fetchJob(jobId: string): Promise<Job> {
   return asJson<Job>(await fetch(`/api/jobs/${jobId}`));
+}
+
+export async function fetchDatasets(): Promise<Dataset[]> {
+  return asJson<Dataset[]>(await fetch("/api/datasets"));
+}
+
+export async function fetchDataset(name: string): Promise<Dataset> {
+  return asJson<Dataset>(await fetch(`/api/datasets/${encodeURIComponent(name)}`));
 }
