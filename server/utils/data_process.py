@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from data_processor.vendor_specific.polycam import process_polycam_from_config
 from segment3d.identify_objects.orchestrator import identify_all_frames_from_config
@@ -270,9 +270,37 @@ _PIPELINE_BUILDERS = {
 }
 
 
+def get_pipeline_steps(data_source: str) -> List[PipelineStep]:
+    """Return the ordered list of pipeline steps for *data_source*.
+
+    Useful for UIs that need to display the full step list before the run
+    starts.  Raises ``ValueError`` for unsupported sources.
+    """
+    try:
+        ds = DataSource(data_source.lower())
+    except ValueError:
+        supported = ", ".join(d.value for d in DataSource)
+        raise ValueError(
+            f"Unsupported data source: {data_source!r}. Supported: {supported}"
+        )
+
+    builder = _PIPELINE_BUILDERS.get(ds)
+    if builder is None:
+        raise ValueError(f"No pipeline builder registered for {ds!r}")
+    return builder()
+
+
+# Callback invoked as steps start/finish so callers can track live progress.
+# Receives a dict with at least ``event`` ("step_start" | "step_complete"),
+# ``name``, ``index`` (1-based), and ``total``.  On "step_complete" it also
+# carries ``success``, ``duration_seconds``, and ``error``.
+ProgressCallback = Callable[[Dict[str, Any]], None]
+
+
 def process_data(
     config: Dict[str, Any],
     config_path: Optional[str] = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> PipelineResult:
     """Run the full processing pipeline using *config*.
 
@@ -356,8 +384,28 @@ def process_data(
             f"{'=' * 72}\n"
         )
 
+        if progress_callback is not None:
+            progress_callback({
+                "event": "step_start",
+                "name": step.name,
+                "description": step.description,
+                "index": i,
+                "total": total,
+            })
+
         step_result = _run_step(step, config, config_path or "")
         pipeline_result.steps.append(step_result)
+
+        if progress_callback is not None:
+            progress_callback({
+                "event": "step_complete",
+                "name": step.name,
+                "index": i,
+                "total": total,
+                "success": step_result.success,
+                "duration_seconds": step_result.duration_seconds,
+                "error": step_result.error,
+            })
 
         if step_result.success:
             logger.info(

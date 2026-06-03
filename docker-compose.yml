@@ -32,3 +32,22 @@ services:
       memlock: -1
       stack: 67108864
     restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app/frontend
+    # Install deps then start the Vite dev server. Anonymous volume keeps the
+    # container's node_modules separate from the host's (which may be absent or
+    # built for a different platform).
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    environment:
+      # Proxy /api requests to the Flask service over the compose network.
+      - VITE_API_TARGET=http://flame3d-core:5005
+    depends_on:
+      - flame3d-core
+    restart: unless-stopped
