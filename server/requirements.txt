@@ -1,0 +1,12 @@
+# Lightweight dependencies for the Flask API service.
+#
+# The API only enqueues Celery jobs and reads their status; it never runs the
+# pipeline, so it needs none of the heavy ML stack in the repo-root
+# requirements.txt (torch, vLLM, open3d, SAM3, …).
+#
+#   flask  – web framework / app factory
+#   celery – task client (send_task to RabbitMQ, read AsyncResult)
+#   redis  – client for the Celery result backend
+flask
+celery
+redis

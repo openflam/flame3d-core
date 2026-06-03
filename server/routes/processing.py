@@ -35,16 +35,14 @@ def get_default_config():
 @processing_bp.route("/steps", methods=["GET"])
 def list_steps():
     """Return the ordered pipeline steps for the given data source."""
-    from server.utils.data_process import get_pipeline_steps
+    from server.utils.pipeline_steps import get_pipeline_steps
 
     source = request.args.get("source", "polycam")
     try:
         steps = get_pipeline_steps(source)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify([
-        {"name": s.name, "description": s.description} for s in steps
-    ]), 200
+    return jsonify([{"name": s.name, "description": s.description} for s in steps]), 200
 
 
 @processing_bp.route("/upload", methods=["POST"])
@@ -87,6 +85,7 @@ def upload_and_process():
     polycam_dir = data_dir / "polycam_data"
     if polycam_dir.exists():
         import shutil
+
         shutil.rmtree(polycam_dir)
 
     # Write the config next to the data so subprocess steps can read it.

@@ -43,7 +43,8 @@ def run_pipeline_task(
 ) -> Dict[str, Any]:
     """Run the full pipeline for *config*, publishing per-step progress."""
     # Heavy imports happen here, inside the worker, not at module import time.
-    from server.utils.data_process import get_pipeline_steps, process_data
+    from server.utils.data_process import process_data
+    from server.utils.pipeline_steps import get_pipeline_steps
 
     data_source = config["data_source"]
     steps = get_pipeline_steps(data_source)

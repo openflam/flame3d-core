@@ -1,7 +1,11 @@
 # =============================================================================
-# flame3d-core Dockerfile
-# Creates two conda environments: flame3d-core (project deps) and sam3 (SAM 3)
-# Project code is volume-mounted at runtime — no rebuild needed for code changes.
+# segmentation-worker Dockerfile
+# The heavy GPU image: runs the Celery worker that executes the data-processing
+# pipeline. Creates two conda environments — flame3d-core (project deps) and
+# sam3 (SAM 3). Project code is volume-mounted at runtime — no rebuild needed
+# for code changes.
+#
+# (The lightweight Flask API uses server/Dockerfile instead.)
 # =============================================================================
 
 FROM nvidia/cuda:12.6.3-devel-ubuntu22.04
@@ -78,10 +82,10 @@ RUN conda run -n sam3 pip install --no-cache-dir einops ninja \
 # ---- Working directory (will be overridden by volume mount) -----------------
 WORKDIR /app
 
-# ---- Default command: start the Flask server --------------------------------
-# Uses conda run to activate the flame3d-core env, then launches Flask
-EXPOSE 5005
-
+# ---- Default command: start the Celery worker -------------------------------
+# Uses conda run to activate the flame3d-core env, then launches the worker.
+# Concurrency 1: the pipeline saturates the GPU, so one job runs at a time.
+# (docker-compose overrides this, but it keeps the image runnable standalone.)
 CMD ["conda", "run", "--no-capture-output", "-n", "flame3d-core", \
-     "python", "-m", "flask", "--app", "server:create_app()", "run", \
-     "--host", "0.0.0.0", "--port", "5005"]
+     "celery", "-A", "server.celery_app:celery_app", "worker", \
+     "--loglevel=info", "--concurrency=1"]
