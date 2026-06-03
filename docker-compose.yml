@@ -22,4 +22,13 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    shm_size: '16gb'
+    # Allow unlimited locked (pinned) memory and a large stack.
+    # vLLM stages model weights into the GPU via pinned host memory; Docker's
+    # default memlock limit (8 MB) forces a pathologically slow pageable-copy
+    # fallback (~50 MB/s), making weight loading take minutes instead of seconds.
+    # These match NVIDIA's recommended container ulimits.
+    ulimits:
+      memlock: -1
+      stack: 67108864
     restart: unless-stopped
