@@ -67,6 +67,7 @@ services:
       # only needs the `server` package and config_io.py.
       - .:/app
     environment:
+      - PYTHONPATH=/app
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
@@ -98,6 +99,11 @@ services:
       # Persist HuggingFace model cache across container rebuilds
       - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
     environment:
+      # Put the project root on sys.path *permanently*. The `celery` console
+      # script (unlike `python -m`) only adds the cwd to sys.path transiently
+      # while resolving -A, so root-level packages (data_processor, segment3d,
+      # config_io) would otherwise fail to import once a task runs.
+      - PYTHONPATH=/app
       - HF_TOKEN=${HF_TOKEN}
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0

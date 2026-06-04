@@ -104,23 +104,33 @@ def _run_step_subprocess(
     start = time.monotonic()
 
     try:
-        result = subprocess.run(
+        # Stream output through a pipe rather than handing sys.stdout/stderr
+        # directly to the child. Under a Celery worker, sys.stdout/stderr are
+        # ``LoggingProxy`` objects with no ``fileno()``, which subprocess needs
+        # for an inherited fd. Reading the pipe and re-emitting via write()
+        # keeps GPU-heavy steps visible and works under both Celery and a TTY.
+        with subprocess.Popen(
             cmd,
             cwd=str(cwd),
-            check=False,
-            # Stream output rather than capturing – keeps GPU-heavy steps visible.
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            text=True,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                sys.stdout.write(line)
+            returncode = proc.wait()
+
         elapsed = time.monotonic() - start
 
-        if result.returncode != 0:
+        if returncode != 0:
             return StepResult(
                 name=step.name,
                 success=False,
                 duration_seconds=elapsed,
-                return_code=result.returncode,
-                error=f"Process exited with code {result.returncode}",
+                return_code=returncode,
+                error=f"Process exited with code {returncode}",
             )
 
         return StepResult(

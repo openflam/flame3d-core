@@ -5,6 +5,7 @@ import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
+import LinearProgress from "@mui/material/LinearProgress";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -28,6 +29,8 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Upload progress as a fraction in [0, 1]; null when not uploading.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     fetchDefaultConfig()
@@ -42,16 +45,24 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
     if (!file || !config) return;
     setSubmitting(true);
     setSubmitError(null);
+    setUploadProgress(0);
     try {
-      const { job_id } = await uploadAndProcess(file, config);
+      const { job_id } = await uploadAndProcess(file, config, setUploadProgress);
       const name = String(config.dataset_name ?? "");
       onStarted(name, job_id);
     } catch (e) {
       setSubmitError((e as Error).message);
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   };
+
+  // Once all bytes are sent, the server is still saving + enqueuing — show an
+  // indeterminate bar for that tail rather than sitting at a static 100%.
+  const uploading = uploadProgress !== null;
+  const uploadPct = Math.round((uploadProgress ?? 0) * 100);
+  const serverFinishing = uploading && uploadPct >= 100;
 
   return (
     <Box>
@@ -120,12 +131,37 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
               disabled={!file || submitting}
               onClick={handleSubmit}
             >
-              {submitting ? "Uploading…" : "Start processing"}
+              {!submitting
+                ? "Start processing"
+                : serverFinishing
+                  ? "Starting…"
+                  : `Uploading… ${uploadPct}%`}
             </Button>
-            <Button onClick={() => defaults && setConfig(defaults)}>
+            <Button
+              onClick={() => defaults && setConfig(defaults)}
+              disabled={submitting}
+            >
               Reset defaults
             </Button>
           </Box>
+
+          {uploading && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress
+                variant={serverFinishing ? "indeterminate" : "determinate"}
+                value={uploadPct}
+              />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mt: 0.5, display: "block" }}
+              >
+                {serverFinishing
+                  ? "Upload complete — preparing pipeline…"
+                  : `Uploading ${file?.name ?? ""} — ${uploadPct}%`}
+              </Typography>
+            </Box>
+          )}
         </>
       )}
     </Box>
