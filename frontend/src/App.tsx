@@ -7,6 +7,7 @@ import Typography from "@mui/material/Typography";
 import DatasetList from "./components/DatasetList";
 import DatasetDetail from "./components/DatasetDetail";
 import UploadForm from "./components/UploadForm";
+import QueryApp from "./query/QueryApp";
 import type { Dataset, DatasetStatus } from "./api";
 
 type DetailDataset = {
@@ -19,7 +20,8 @@ type DetailDataset = {
 type View =
   | { name: "list" }
   | { name: "upload" }
-  | { name: "detail"; dataset: DetailDataset };
+  | { name: "detail"; dataset: DetailDataset }
+  | { name: "query"; datasetName: string };
 
 export default function App() {
   const [view, setView] = useState<View>({ name: "list" });
@@ -48,6 +50,12 @@ export default function App() {
       dataset: { name: datasetName, status: "processing", jobId, dataSource },
     });
 
+  // The query view is a full-screen experience (its own 3D viewer + search
+  // chrome), so render it on its own without the dataset-processing layout.
+  if (view.name === "query") {
+    return <QueryApp datasetName={view.datasetName} onBack={showList} />;
+  }
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar
@@ -75,6 +83,9 @@ export default function App() {
           <DatasetList
             onSelect={openDataset}
             onUploadNew={() => setView({ name: "upload" })}
+            onQuery={(ds) =>
+              setView({ name: "query", datasetName: ds.dataset_name })
+            }
           />
         )}
 

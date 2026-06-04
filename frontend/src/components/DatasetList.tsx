@@ -20,6 +20,7 @@ import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ViewInArIcon from "@mui/icons-material/ViewInAr";
 import { deleteDataset, fetchDatasets, type Dataset, type DatasetStatus } from "../api";
 
 const STATUS_CHIP: Record<
@@ -34,9 +35,10 @@ const STATUS_CHIP: Record<
 interface Props {
   onSelect: (dataset: Dataset) => void;
   onUploadNew: () => void;
+  onQuery: (dataset: Dataset) => void;
 }
 
-export default function DatasetList({ onSelect, onUploadNew }: Props) {
+export default function DatasetList({ onSelect, onUploadNew, onQuery }: Props) {
   const [datasets, setDatasets] = useState<Dataset[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Dataset pending delete-confirmation, plus in-flight / error state.
@@ -134,6 +136,21 @@ export default function DatasetList({ onSelect, onUploadNew }: Props) {
                     variant="outlined"
                     sx={{ mr: 1 }}
                   />
+                  {ds.status === "complete" && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<ViewInArIcon fontSize="small" />}
+                      onClick={(e) => {
+                        // Don't trigger the row's onSelect navigation.
+                        e.stopPropagation();
+                        onQuery(ds);
+                      }}
+                      sx={{ mr: 1 }}
+                    >
+                      Query
+                    </Button>
+                  )}
                   <Tooltip title="Delete dataset">
                     <IconButton
                       edge="end"

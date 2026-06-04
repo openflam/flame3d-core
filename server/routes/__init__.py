@@ -9,6 +9,8 @@ def register_blueprints(app: Flask):
     """Register all blueprints with the Flask application."""
     from server.routes.health import health_bp
     from server.routes.processing import processing_bp
+    from server.routes.query import query_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(processing_bp)
+    app.register_blueprint(query_bp)
