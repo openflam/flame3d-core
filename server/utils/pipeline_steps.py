@@ -64,13 +64,17 @@ def _build_polycam_steps() -> List[PipelineStep]:
             module="segment3d.identify_objects.orchestrator",
             run_as_subprocess=True,
         ),
-        # Step 3 — Normalize labels (flame3d-core, inline)
+        # Step 3 — Normalize labels (flame3d-core, subprocess for GPU isolation)
+        # Loads an OpenCLIP model onto the GPU; run it as a subprocess so the
+        # CUDA context (and PyTorch's cached allocations) are fully released on
+        # exit. Running it inline leaked GPU memory into the long-lived Celery
+        # worker, starving the later captioning step.
         PipelineStep(
             name="normalize_labels",
             description="Normalize object labels via CLIP clustering",
             conda_env=_FLAME3D_ENV,
             module="segment3d.identify_objects.normalize_labels",
-            run_as_subprocess=False,
+            run_as_subprocess=True,
         ),
         # Step 4 — SAM3 segmentation (sam3 env, subprocess for GPU isolation)
         PipelineStep(

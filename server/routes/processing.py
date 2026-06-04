@@ -6,14 +6,17 @@ GET  /api/config              → default master_config.json contents
 GET  /api/steps?source=...    → ordered pipeline steps for a data source
 POST /api/upload              → save uploaded zip + config, start pipeline
 GET  /api/jobs/<job_id>       → live status of a running/finished job
-GET    /api/datasets          → all datasets + their index status
-GET    /api/datasets/<name>    → a single dataset's index row
-DELETE /api/datasets/<name>    → soft-delete (mark_delete); files purged later
+GET    /api/datasets               → all datasets + their index status
+GET    /api/datasets/<name>        → a single dataset's index row
+DELETE /api/datasets/<name>        → soft-delete (mark_delete); files purged later
+GET    /api/datasets/<name>/config → config used to process the dataset
+POST   /api/datasets/<name>/reprocess → re-run (in place or as a named copy)
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -31,6 +34,14 @@ processing_bp = Blueprint("processing", __name__, url_prefix="/api")
 
 # Default config shipped with the server.
 _MASTER_CONFIG_PATH = Path(__file__).resolve().parent.parent / "master_config.json"
+
+# Dataset names become directory names under data/ and outputs/, so keep them
+# to a safe character set (no path separators, no "..").
+_VALID_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _valid_dataset_name(name: str) -> bool:
+    return bool(name) and ".." not in name and _VALID_NAME.match(name) is not None
 
 
 @processing_bp.route("/config", methods=["GET"])
@@ -150,3 +161,64 @@ def delete_dataset(name: str):
     if not mark_deleted(name):
         return jsonify({"error": "Dataset not found"}), 404
     return jsonify({"dataset_name": name, "status": "marked_delete"}), 200
+
+
+@processing_bp.route("/datasets/<name>/config", methods=["GET"])
+def get_dataset_config(name: str):
+    """Return the config that was used to process *name*.
+
+    Reads ``data/<name>/master_config.json``; falls back to the shipped default
+    (with ``dataset_name`` filled in) if that dataset has no saved config.
+    """
+    saved = get_data_path(name) / "master_config.json"
+    if saved.is_file():
+        with open(saved, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f)), 200
+
+    with open(_MASTER_CONFIG_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    config["dataset_name"] = name
+    return jsonify(config), 200
+
+
+@processing_bp.route("/datasets/<name>/reprocess", methods=["POST"])
+def reprocess_dataset(name: str):
+    """Re-run the pipeline for *name* with (possibly) edited parameters.
+
+    Body (JSON):
+      • ``config``           — the full master config to run with
+      • ``start_from_step``  — step name to resume from (optional)
+      • ``as_copy``          — if true, run on a fresh copy instead of in place
+      • ``new_name``         — name for the copy (required when ``as_copy``)
+
+    In-place re-runs reuse the dataset's existing data/ and outputs/.  Copies
+    are cloned (by the worker) from the source dataset first, leaving the
+    original untouched.
+    """
+    body = request.get_json(silent=True) or {}
+    config = body.get("config")
+    if not isinstance(config, dict):
+        return jsonify({"error": "Missing or invalid 'config'"}), 400
+
+    config = dict(config)  # don't mutate the request payload
+    config["start_from_step"] = body.get("start_from_step") or None
+
+    if body.get("as_copy"):
+        new_name = (body.get("new_name") or "").strip()
+        if not _valid_dataset_name(new_name):
+            return jsonify({
+                "error": "Invalid copy name (use letters, digits, '.', '_', '-')"
+            }), 400
+        if get_dataset(new_name) is not None or get_data_path(new_name).exists():
+            return jsonify({"error": f"Dataset {new_name!r} already exists"}), 409
+
+        config["dataset_name"] = new_name
+        config_path = get_data_path(new_name) / "master_config.json"
+        job_id = job_manager.create_job(config, str(config_path), copy_from=name)
+        return jsonify({"dataset_name": new_name, "job_id": job_id}), 202
+
+    # In-place re-run.
+    config["dataset_name"] = name
+    config_path = get_data_path(name) / "master_config.json"
+    job_id = job_manager.create_job(config, str(config_path))
+    return jsonify({"dataset_name": name, "job_id": job_id}), 202

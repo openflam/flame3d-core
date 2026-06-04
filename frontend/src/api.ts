@@ -123,6 +123,45 @@ export async function fetchDataset(name: string): Promise<Dataset> {
   return asJson<Dataset>(await fetch(`/api/datasets/${encodeURIComponent(name)}`));
 }
 
+export interface PipelineStepInfo {
+  name: string;
+  description: string;
+}
+
+export async function fetchSteps(source: string): Promise<PipelineStepInfo[]> {
+  return asJson<PipelineStepInfo[]>(
+    await fetch(`/api/steps?source=${encodeURIComponent(source)}`),
+  );
+}
+
+/** The config that was used to process a dataset (for pre-filling the form). */
+export async function fetchDatasetConfig(name: string): Promise<Config> {
+  return asJson<Config>(
+    await fetch(`/api/datasets/${encodeURIComponent(name)}/config`),
+  );
+}
+
+export interface ReprocessRequest {
+  config: Config;
+  start_from_step: string | null;
+  as_copy: boolean;
+  new_name?: string;
+}
+
+/** Re-run a dataset's pipeline, in place or as a named copy. */
+export async function reprocessDataset(
+  name: string,
+  req: ReprocessRequest,
+): Promise<{ dataset_name: string; job_id: string }> {
+  return asJson<{ dataset_name: string; job_id: string }>(
+    await fetch(`/api/datasets/${encodeURIComponent(name)}/reprocess`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
 /** Soft-delete a dataset (marks it for deletion; files purged out-of-band). */
 export async function deleteDataset(name: string): Promise<void> {
   const res = await fetch(`/api/datasets/${encodeURIComponent(name)}`, {

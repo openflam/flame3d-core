@@ -13,7 +13,7 @@ Pipeline steps (Polycam)
 ========================
 1. ``data_processor.vendor_specific.polycam``   (flame3d-core env)
 2. ``segment3d.identify_objects.orchestrator``   (flame3d-core env)
-3. ``segment3d.identify_objects.normalize_labels`` (flame3d-core env)
+3. ``segment3d.identify_objects.normalize_labels`` (flame3d-core env) – run as subprocess (CLIP on GPU)
 4. ``segment3d.sam3_runner``                     (sam3 env) – run as subprocess
 5. ``segment3d.postsam3_pipeline.postsam3_pipeline`` (flame3d-core env) – run as subprocess
 6. ``segment3d.captioning.orchestrator``         (flame3d-core env) – run as subprocess

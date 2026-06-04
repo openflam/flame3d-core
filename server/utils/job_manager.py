@@ -45,16 +45,29 @@ def _empty_job(job_id: str) -> Dict[str, Any]:
 class JobManager:
     """Dispatches pipeline jobs to Celery and normalizes their status."""
 
-    def create_job(self, config: Dict[str, Any], config_path: str) -> str:
+    def create_job(
+        self,
+        config: Dict[str, Any],
+        config_path: str,
+        copy_from: str | None = None,
+    ) -> str:
         """Enqueue a pipeline run and return its Celery task id (= job id).
 
         Also records the dataset as ``processing`` in the durable dataindex
         table so it shows up in the dataset list immediately.  The worker
         flips it to ``complete`` / ``failed`` when the run finishes.
+
+        If *copy_from* is given, the worker first copies that dataset's
+        ``data/`` and ``outputs/`` directories into this dataset before running
+        — used by "process as copy".
         """
         from server.database import upsert_processing
 
-        result = celery_app.send_task(_TASK_NAME, args=[config, config_path])
+        result = celery_app.send_task(
+            _TASK_NAME,
+            args=[config, config_path],
+            kwargs={"copy_from": copy_from},
+        )
         job_id = result.id
 
         upsert_processing(

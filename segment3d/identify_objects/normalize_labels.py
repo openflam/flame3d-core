@@ -109,12 +109,26 @@ def embed_labels(
     model = model.to(device_str).eval()
     tokenizer = open_clip.get_tokenizer(model_name)
 
-    with torch.no_grad():
-        tokens = tokenizer(labels).to(device_str)
-        features = model.encode_text(tokens)
-        features = features / features.norm(dim=-1, keepdim=True)
+    try:
+        with torch.no_grad():
+            tokens = tokenizer(labels).to(device_str)
+            features = model.encode_text(tokens)
+            features = features / features.norm(dim=-1, keepdim=True)
 
-    return features.cpu().numpy().astype(np.float32), device_str
+        embeddings = features.cpu().numpy().astype(np.float32)
+    finally:
+        # Free the GPU model and cached allocations so this call doesn't leak
+        # memory into a long-lived process (e.g. when run inline rather than as
+        # an isolated subprocess).
+        del model, tokenizer
+        if "features" in locals():
+            del features
+        if "tokens" in locals():
+            del tokens
+        if device_str.startswith("cuda") and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    return embeddings, device_str
 
 
 # ---------------------------------------------------------------------------

@@ -20,8 +20,11 @@ being replaced by a Celery traceback.
 
 from __future__ import annotations
 
+import json
+import shutil
 import traceback
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from server.celery_app import celery_app
 
@@ -35,13 +38,51 @@ STATUS_FAILED = "failed"
 TASK_NAME = "run_pipeline"
 
 
+def _prepare_inputs(
+    config: Dict[str, Any],
+    config_path: str,
+    copy_from: Optional[str],
+) -> None:
+    """Stage inputs before the pipeline runs.
+
+    When *copy_from* is set ("process as copy"), clone that dataset's ``data/``
+    and ``outputs/`` directories into this dataset so the run operates on an
+    independent copy and the original is left untouched.  Symlinks are
+    preserved (the original — and thus their targets — still exists).
+
+    Always (re)writes the on-disk ``master_config.json`` so the subprocess
+    pipeline steps read the exact parameters and ``start_from_step`` chosen for
+    this run.
+    """
+    from config_io import PATHS
+
+    dataset_name = config["dataset_name"]
+
+    if copy_from:
+        for root in (PATHS["data"], PATHS["outputs"]):
+            src = root / copy_from
+            dst = root / dataset_name
+            if src.exists():
+                shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+
+    cfg_path = Path(config_path)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+
 @celery_app.task(bind=True, name=TASK_NAME)
 def run_pipeline_task(
     self,
     config: Dict[str, Any],
     config_path: str,
+    copy_from: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Run the full pipeline for *config*, publishing per-step progress."""
+    """Run the full pipeline for *config*, publishing per-step progress.
+
+    If *copy_from* is given, this dataset is first cloned from that one (see
+    :func:`_prepare_inputs`) — used by "process as copy".
+    """
     # Heavy imports happen here, inside the worker, not at module import time.
     from server.utils.data_process import process_data
     from server.utils.pipeline_steps import get_pipeline_steps
@@ -95,6 +136,7 @@ def run_pipeline_task(
         publish()
 
     try:
+        _prepare_inputs(config, config_path, copy_from)
         result = process_data(
             config,
             config_path=config_path,
