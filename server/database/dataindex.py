@@ -34,6 +34,8 @@ from server.database.connection import get_connection
 STATUS_PROCESSING = "processing"
 STATUS_COMPLETE = "complete"
 STATUS_FAILED = "failed"
+# Soft-delete: hidden from the UI; files are purged later by clean_storage.
+STATUS_MARKED_DELETE = "marked_delete"
 
 # Process-local flag so we run the (idempotent) DDL only once per process.
 _schema_ready = False
@@ -131,6 +133,37 @@ def set_status(
             )
 
 
+def mark_deleted(dataset_name: str) -> bool:
+    """Soft-delete a dataset: mark it ``marked_delete`` so the UI hides it.
+
+    The on-disk files are left untouched — ``clean_storage`` purges them later.
+    Returns ``True`` if a row was updated, ``False`` if the dataset is unknown.
+    """
+    _ensure_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE dataindex
+                   SET status = %s, updated_at = now()
+                 WHERE dataset_name = %s;
+                """,
+                (STATUS_MARKED_DELETE, dataset_name),
+            )
+            return cur.rowcount > 0
+
+
+def delete_row(dataset_name: str) -> None:
+    """Permanently remove a dataset's index row (used after files are purged)."""
+    _ensure_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM dataindex WHERE dataset_name = %s;",
+                (dataset_name,),
+            )
+
+
 def reconcile_existing(dataset_names: List[str]) -> None:
     """Register pre-existing on-disk datasets that aren't in the index yet.
 
@@ -156,11 +189,27 @@ def reconcile_existing(dataset_names: List[str]) -> None:
 # ── Reads ──────────────────────────────────────────────────────────────────
 
 def list_datasets() -> List[Dict[str, Any]]:
-    """Return all datasets, most recently updated first."""
+    """Return all visible datasets (excluding soft-deleted), newest first."""
     _ensure_schema()
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM dataindex ORDER BY updated_at DESC;")
+            cur.execute(
+                "SELECT * FROM dataindex "
+                "WHERE status <> %s ORDER BY updated_at DESC;",
+                (STATUS_MARKED_DELETE,),
+            )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def list_marked_delete() -> List[Dict[str, Any]]:
+    """Return datasets soft-deleted in the UI and awaiting file cleanup."""
+    _ensure_schema()
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM dataindex WHERE status = %s ORDER BY updated_at;",
+                (STATUS_MARKED_DELETE,),
+            )
             return [_row_to_dict(r) for r in cur.fetchall()]
 
 

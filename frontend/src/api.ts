@@ -122,3 +122,20 @@ export async function fetchDatasets(): Promise<Dataset[]> {
 export async function fetchDataset(name: string): Promise<Dataset> {
   return asJson<Dataset>(await fetch(`/api/datasets/${encodeURIComponent(name)}`));
 }
+
+/** Soft-delete a dataset (marks it for deletion; files purged out-of-band). */
+export async function deleteDataset(name: string): Promise<void> {
+  const res = await fetch(`/api/datasets/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.error ?? detail;
+    } catch {
+      /* ignore non-JSON error bodies */
+    }
+    throw new Error(detail);
+  }
+}

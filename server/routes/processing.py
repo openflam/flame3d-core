@@ -6,8 +6,9 @@ GET  /api/config              → default master_config.json contents
 GET  /api/steps?source=...    → ordered pipeline steps for a data source
 POST /api/upload              → save uploaded zip + config, start pipeline
 GET  /api/jobs/<job_id>       → live status of a running/finished job
-GET  /api/datasets            → all datasets + their index status
-GET  /api/datasets/<name>     → a single dataset's index row
+GET    /api/datasets          → all datasets + their index status
+GET    /api/datasets/<name>    → a single dataset's index row
+DELETE /api/datasets/<name>    → soft-delete (mark_delete); files purged later
 """
 
 from __future__ import annotations
@@ -18,7 +19,12 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from config_io import PATHS, get_data_path
-from server.database import get_dataset, list_datasets, reconcile_existing
+from server.database import (
+    get_dataset,
+    list_datasets,
+    mark_deleted,
+    reconcile_existing,
+)
 from server.utils.job_manager import job_manager
 
 processing_bp = Blueprint("processing", __name__, url_prefix="/api")
@@ -131,3 +137,16 @@ def get_dataset_status(name: str):
     if dataset is None:
         return jsonify({"error": "Dataset not found"}), 404
     return jsonify(dataset), 200
+
+
+@processing_bp.route("/datasets/<name>", methods=["DELETE"])
+def delete_dataset(name: str):
+    """Soft-delete a dataset.
+
+    Marks the row ``marked_delete`` so it disappears from the UI immediately.
+    The on-disk files under data/ and outputs/ are left in place and purged
+    later by the ``clean_storage`` script.
+    """
+    if not mark_deleted(name):
+        return jsonify({"error": "Dataset not found"}), 404
+    return jsonify({"dataset_name": name, "status": "marked_delete"}), 200
