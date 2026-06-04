@@ -326,8 +326,16 @@ def process_polycam(
         dataset_name=dataset_name,
     )
 
-    # Step 5 – create symlink to images in the output directory
     import shutil
+
+    # Step 5 – copy the raw mesh into the output directory as mesh.glb
+    src_mesh = polycam_dir / "raw.glb"
+    if src_mesh.is_file():
+        mesh_out = get_output_path(dataset_name) / "mesh.glb"
+        shutil.copy2(src_mesh, mesh_out)
+        print(f"Copied mesh to {mesh_out}")
+
+    # Step 6 – create symlink to images in the output directory
     src_images = polycam_dir / "keyframes" / "images"
     
     images_link = get_images_output_path(dataset_name)
