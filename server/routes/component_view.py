@@ -118,6 +118,13 @@ def load_mesh():
 
     Prefers ``outputs/<name>/mesh.glb`` (produced by the processing pipeline),
     falling back to ``outputs/<name>/raw.glb`` and the raw polycam export.
+
+    Coordinate frame: the served mesh is a standard glTF asset in **Y-up**,
+    whereas component bboxes and COLMAP output are in the pipeline's
+    right-handed **Z-up** world frame. The two are bridged by the fixed
+    ``_YUP_TO_ZUP`` rotation defined in
+    ``data_processor/vendor_specific/polycam.py`` (mesh viewer-frame -> world:
+    ``(x, y, z) -> (x, -z, y)``). See ``docs/CoordinateSystem.md``.
     """
     dataset_name = request.args.get("dataset_name")
     if not dataset_name:

@@ -5,12 +5,19 @@
 // data_processor/vendor_specific/polycam.py. The server stores and returns all
 // geometry in that frame, so it stays usable by any downstream application.
 //
-// The Three.js viewer, however, is **Y-up**. These helpers convert between the
-// two and are the *only* place coordinate swaps happen on the client. They
-// mirror the axis swaps that previously lived in the server's transforms.py:
+// The Three.js viewer, however, is **Y-up**, and it renders mesh.glb in its raw
+// Polycam/ARKit Y-up frame (GLTFLoader applies no axis change). polycam.py built
+// the world frame by rotating that same Y-up mesh with _YUP_TO_ZUP:
 //
-//   world (Z-up) -> viewer (Y-up):  (x, y, z) -> (y, z, x)
-//   viewer (Y-up) -> world (Z-up):  (x, y, z) -> (z, x, y)
+//   _YUP_TO_ZUP:  (x, y, z)_viewer  ->  (x, -z, y)_world
+//
+// so to place world-frame geometry onto the viewer's Y-up mesh we apply the
+// inverse of that rotation. (Blender's glTF importer happens to apply the exact
+// same Y-up->Z-up rotation as _YUP_TO_ZUP, which is why the mesh and COLMAP line
+// up there but a naive axis-swap is wrong here.)
+//
+//   world (Z-up) -> viewer (Y-up):  (x, y, z) -> (x,  z, -y)
+//   viewer (Y-up) -> world (Z-up):  (x, y, z) -> (x, -z,  y)
 //
 // Apply worldToViewer* on data coming *from* the server before rendering, and
 // viewerToWorld* on geometry going *to* the server (component edits/additions).
@@ -19,14 +26,14 @@ import type { BoundingBox } from "./types/global";
 
 export type Vec3 = [number, number, number];
 
-/** World (right-handed Z-up) -> viewer (Three.js Y-up). */
+/** World (right-handed Z-up) -> viewer (Three.js Y-up): inverse of _YUP_TO_ZUP. */
 export function worldToViewerPoint(c: number[]): Vec3 {
-  return [c[1], c[2], c[0]];
+  return [c[0], c[2], -c[1]];
 }
 
-/** Viewer (Three.js Y-up) -> world (right-handed Z-up). */
+/** Viewer (Three.js Y-up) -> world (right-handed Z-up): _YUP_TO_ZUP. */
 export function viewerToWorldPoint(c: number[]): Vec3 {
-  return [c[2], c[0], c[1]];
+  return [c[0], -c[2], c[1]];
 }
 
 /** Convert a bounding box's corners from the world frame to the viewer frame. */
