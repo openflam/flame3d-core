@@ -4,7 +4,7 @@
   "start_from_step": null,
 
   "polycam": {
-    "depth_tolerance": 0.05
+    "depth_tolerance": 1.0
   },
 
   "identify_objects": {
@@ -16,15 +16,15 @@
   },
 
   "normalize_labels": {
-    "distance_threshold": 0.12,
-    "clip_model": "ViT-B-32",
-    "clip_pretrained": "openai",
+    "distance_threshold": 0.05,
+    "clip_model": "ViT-H-14",
+    "clip_pretrained": "laion2B-s32B-b79K",
     "device": null,
-    "skip_lemmatize": false,
+    "skip_lemmatize": true,
     "fill_holes": true,
-    "max_gap": 3,
+    "max_gap": 5,
     "objects_to_frames": true,
-    "min_sequence_length": 5
+    "min_sequence_length": 3
   },
 
   "sam3": {
