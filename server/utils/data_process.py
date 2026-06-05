@@ -17,10 +17,11 @@ Pipeline steps (Polycam)
 4. ``segment3d.sam3_runner``                     (sam3 env) – run as subprocess
 5. ``segment3d.postsam3_pipeline.postsam3_pipeline`` (flame3d-core env) – run as subprocess
 6. ``segment3d.captioning.orchestrator``         (flame3d-core env) – run as subprocess
+7. ``server.database.spatial_tables``            (flame3d-core env)
 
 Steps 4–6 are launched as shell subprocesses (via ``conda run``) rather than
 Python function calls so that each step can fully release GPU memory before
-the next step starts.
+the next step starts.  Step 7 is a lightweight DB-only step run inline.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from typing import Any, Callable, Dict, List, Optional
 from data_processor.vendor_specific.polycam import process_polycam_from_config
 from segment3d.identify_objects.orchestrator import identify_all_frames_from_config
 from segment3d.identify_objects.normalize_labels import normalize_labels_from_config
+from server.database.spatial_tables import create_tables_from_config
 
 # Lightweight step metadata lives in its own module so the Flask server can
 # import it without pulling in the heavy ML stack above.
@@ -159,6 +161,7 @@ _INLINE_HANDLERS: Dict[str, Any] = {
     "polycam_process": process_polycam_from_config,
     "identify_objects": identify_all_frames_from_config,
     "normalize_labels": normalize_labels_from_config,
+    "create_tables": create_tables_from_config,
 }
 
 

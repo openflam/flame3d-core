@@ -107,7 +107,7 @@ per pipeline step**. A field's `type` is one of `string`, `number`, `integer`,
 | Field | Type | Allowed values | Default | Description |
 | --- | --- | --- | --- | --- |
 | `data_source` | string | `polycam` | `polycam` | Vendor/format of the raw input. Selects which ordered list of pipeline steps runs. |
-| `start_from_step` | string (nullable) | `polycam_process`, `identify_objects`, `normalize_labels`, `sam3_segmentation`, `postsam3_pipeline`, `captioning` | `null` | Resume the pipeline from this step, reusing earlier outputs. `null` runs from the beginning. |
+| `start_from_step` | string (nullable) | `polycam_process`, `identify_objects`, `normalize_labels`, `sam3_segmentation`, `postsam3_pipeline`, `captioning`, `create_tables` | `null` | Resume the pipeline from this step, reusing earlier outputs. `null` runs from the beginning. |
 
 > **Note:** `dataset_name` is not part of the schema — it is passed separately to
 > every step. See [How the config is used](#how-the-config-is-used).
@@ -276,3 +276,14 @@ The final pipeline step: generates a caption for each component using a VLM.
 | `device` | integer | — | `0` | GPU device index. |
 | `max_components` | integer (nullable) | — | `null` | Cap on the number of components to caption. `null` processes all. |
 | `batch_size` | integer | — | `512` | Number of components processed per batch. |
+
+---
+
+## `create_tables` — Spatial tables (no parameters)
+
+The last pipeline step. It (re)creates the dataset's PostGIS spatial table from
+the component outputs (captions, bounding boxes, best crops) so the data can be
+spatially indexed and queried. This step is **DB-only** and has no tunable
+parameters, so it has no config section — it is driven entirely by the dataset
+name and the on-disk outputs. It can also be run on its own via
+`start_from_step: "create_tables"`.

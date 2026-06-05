@@ -100,6 +100,16 @@ def _build_polycam_steps() -> List[PipelineStep]:
             module="segment3d.captioning.orchestrator",
             run_as_subprocess=True,
         ),
+        # Step 7 — Spatial tables (flame3d-core, inline)
+        # Lightweight, DB-bound (PostGIS) work with no GPU footprint, so it runs
+        # inline in the worker rather than as an isolated subprocess.
+        PipelineStep(
+            name="create_tables",
+            description="Create the PostGIS spatial table for 3-D queries",
+            conda_env=_FLAME3D_ENV,
+            module="server.database.spatial_tables",
+            run_as_subprocess=False,
+        ),
     ]
 
 

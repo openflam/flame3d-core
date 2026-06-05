@@ -251,6 +251,24 @@ def process_dataset(con: psycopg2.extensions.connection, dataset_name: str) -> N
             _insert_rows(cur, table, rows)
 
 
+# ── pipeline step entrypoint ──────────────────────────────────────────────────
+
+
+def create_tables_from_config(config: dict, dataset_name: str) -> None:
+    """Build the PostGIS spatial table for a single dataset (pipeline step).
+
+    Reads the component outputs (captions, bbox, crops) for *dataset_name* and
+    (re)creates its spatial table.  The *config* argument is accepted for
+    interface uniformity with the other ``*_from_config`` steps; this step has
+    no tunable parameters, so it is unused.
+    """
+    con = _pg_conn()
+    try:
+        process_dataset(con, dataset_name)
+    finally:
+        con.close()
+
+
 # ── discovery & entrypoint ────────────────────────────────────────────────────
 
 
