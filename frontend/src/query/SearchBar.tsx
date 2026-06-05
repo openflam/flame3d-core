@@ -8,6 +8,7 @@ import {
 import { useState } from "react";
 import type { BoundingBox, SearchQuery } from "./types/global";
 import { downloadAllComponents } from "./query";
+import { worldToViewerBbox } from "./transforms";
 
 // react-bootstrap's polymorphic Button can blow up TS's union inference
 // (TS2590) when nested inside InputGroup under strict mode. This thin alias
@@ -46,9 +47,10 @@ function SearchBar({
     setIsDownloadingAnnotations(true);
     try {
       const data = await downloadAllComponents(datasetName);
-      const bboxes: BoundingBox[] = data.map((item: any) => ({
-        corners: item.bbox.corners.map((c: number[]) => [c[1], c[2], c[0]]),
-      }));
+      // Components come from the server in the world (Z-up) frame.
+      const bboxes: BoundingBox[] = data.map((item: any) =>
+        worldToViewerBbox(item.bbox),
+      );
       const annotationList: string[] = data.map((item) =>
         item.connected_comp_id.toString(),
       );

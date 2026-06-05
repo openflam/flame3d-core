@@ -4,6 +4,7 @@ import { styles } from "./addComponentStyles";
 import type { GizmoMode } from "./ComponentDetails";
 import type { BoundingBox } from "./types/global";
 import { addComponent } from "./query";
+import { viewerToWorldBbox } from "./transforms";
 
 interface AddComponentProps {
   onDismiss: () => void;
@@ -82,9 +83,8 @@ export default function AddComponent({ onDismiss, gizmoMode, onGizmoModeChange, 
           onClick={async () => {
             if (!editedBBox) return;
             try {
-              const bboxToSave = {
-                corners: editedBBox.corners
-              };
+              // editedBBox is in the viewer frame; convert to the world frame for the server.
+              const bboxToSave = viewerToWorldBbox(editedBBox);
               let base64Data: string | null = null;
               if (imagePreview) {
                 // Strip the "data:image/jpeg;base64," prefix

@@ -8,6 +8,7 @@ import Model3DViewer from "./Model3DViewer";
 import SearchResult from "./SearchResult";
 import SearchComponentList from "./SearchComponentList";
 import { queryStream, SEARCH_SERVER_URL } from "./query";
+import { worldToViewerBbox } from "./transforms";
 import type { BoundingBox, SearchQuery, Route } from "./types/global";
 
 interface QueryAppProps {
@@ -51,11 +52,10 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
     fetch("/data/occupancy_bbox.json")
       .then((response) => response.json())
       .then((data) => {
-        // Extract bounding boxes from the JSON data.
-        // Swap axes as needed -- results of trial and error.
-        const bboxes: BoundingBox[] = data.map((item: any) => ({
-          corners: item.bbox.corners.map((c: number[]) => [c[1], c[2], c[0]]),
-        }));
+        // occupancy_bbox.json is in the world (Z-up) frame; convert for the viewer.
+        const bboxes: BoundingBox[] = data.map((item: any) =>
+          worldToViewerBbox(item.bbox),
+        );
         setOccupancyGrid(bboxes);
       })
       .catch((error) => {
@@ -74,9 +74,10 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
       const dbComponents = result.components || [];
       const customBBoxes = result.custom_bboxes || [];
 
+      // Server returns geometry in the world (Z-up) frame; convert for the viewer.
       const allBBoxes = [
-        ...dbComponents.map((c: any) => c.bbox),
-        ...customBBoxes
+        ...dbComponents.map((c: any) => worldToViewerBbox(c.bbox)),
+        ...customBBoxes.map((b: any) => worldToViewerBbox(b)),
       ];
 
       const allCaptions = [

@@ -23,7 +23,6 @@ from flask import Blueprint, current_app, jsonify, request
 from server.database import spatial as database
 from server.search.process_query import process_query
 from server.search.semantic_search import BM25Provider
-from server.search.transforms import transform_bbox
 
 search_bp = Blueprint("search", __name__, url_prefix="/api")
 
@@ -79,32 +78,31 @@ def search():
     else:
         id_to_caption = {}
 
+    # Bboxes are returned in the pipeline's right-handed Z-up world frame; any
+    # viewer-specific axis swaps are the frontend's responsibility.
     components = []
     for bbox, comp_id in zip(bboxes, component_ids):
         components.append(
             {
-                "bbox": transform_bbox(bbox),
+                "bbox": bbox,
                 "caption": id_to_caption.get(comp_id, "No caption available"),
                 "component_id": str(comp_id),
             }
         )
 
-    transformed_custom_bboxes = []
+    custom_bboxes_out = []
     for custom_bbox in custom_bboxes:
         if isinstance(custom_bbox, list):
-            bbox_dict = {"corners": custom_bbox}
+            custom_bboxes_out.append({"corners": custom_bbox})
         elif isinstance(custom_bbox, dict) and "corners" in custom_bbox:
-            bbox_dict = custom_bbox
-        else:
-            continue
-        transformed_custom_bboxes.append(transform_bbox(bbox_dict))
+            custom_bboxes_out.append(custom_bbox)
 
     return jsonify(
         {
             "reason": result_data["reason"],
             "search_time_ms": result_data["search_time_ms"],
             "components": components,
-            "custom_bboxes": transformed_custom_bboxes,
+            "custom_bboxes": custom_bboxes_out,
         }
     )
 
@@ -205,31 +203,30 @@ def search_stream():
                         valid_component_ids = [row["component_id"]]
                         bbox_map = {row["component_id"]: {"caption": row["caption"]}}
 
+                # Bboxes stay in the right-handed Z-up world frame; the
+                # frontend applies any viewer-specific transforms.
                 components = []
                 for bbox, comp_id in zip(valid_bboxes, valid_component_ids):
                     components.append(
                         {
-                            "bbox": transform_bbox(bbox),
+                            "bbox": bbox,
                             "caption": bbox_map.get(comp_id, {}).get("caption") or "No caption available",
                             "component_id": str(comp_id),
                         }
                     )
 
-                transformed_custom_bboxes = []
+                custom_bboxes_out = []
                 for custom_bbox in custom_bboxes:
                     if isinstance(custom_bbox, list):
-                        bbox_dict = {"corners": custom_bbox}
+                        custom_bboxes_out.append({"corners": custom_bbox})
                     elif isinstance(custom_bbox, dict) and "corners" in custom_bbox:
-                        bbox_dict = custom_bbox
-                    else:
-                        continue
-                    transformed_custom_bboxes.append(transform_bbox(bbox_dict))
+                        custom_bboxes_out.append(custom_bbox)
 
                 final_result = {
                     "reason": reason,
                     "search_time_ms": search_time_ms,
                     "components": components,
-                    "custom_bboxes": transformed_custom_bboxes,
+                    "custom_bboxes": custom_bboxes_out,
                 }
                 yield f"data: {json.dumps({'type': 'result', 'data': final_result})}\n\n"
                 break

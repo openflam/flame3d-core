@@ -7,6 +7,7 @@ import ComponentDetails from "./ComponentDetails";
 import AddComponent from "./AddComponent";
 import { styles as addComponentStyles } from "./addComponentStyles";
 import type { GizmoMode } from "./ComponentDetails";
+import { viewerToWorldBbox } from "./transforms";
 import Model from "./viewer/Model";
 import BoundingBoxMesh from "./viewer/BoundingBoxMesh";
 import CameraController from "./viewer/CameraController";
@@ -227,9 +228,8 @@ export default function Model3DViewer({
         caption: captionToSave,
       };
       if (bboxToSave) {
-        updates.bbox = {
-          corners: bboxToSave.corners as [number, number, number][]
-        };
+        // The gizmo edits in the viewer frame; convert to the world frame for the server.
+        updates.bbox = viewerToWorldBbox(bboxToSave);
       }
       await updateComponent(currentComponentId, updates, datasetName);
       setSaveWarning(null);

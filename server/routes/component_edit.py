@@ -4,8 +4,9 @@
   * ``/api/add_component``    – create a new component (optionally with an image)
   * ``/api/delete_component`` – remove a component
 
-Incoming bboxes are in the Model3DViewer frame and are converted back to the
-COLMAP frame before being persisted.
+Bboxes are persisted exactly as received, in the pipeline's right-handed Z-up
+world frame. Any viewer-specific axis swaps are done by the frontend before it
+sends them here.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from flask import Blueprint, current_app, jsonify, request
 
 from config_io import PATHS
 from server.database import spatial as database
-from server.search.transforms import transform_bbox
 
 component_edit_bp = Blueprint("component_edit", __name__, url_prefix="/api")
 
@@ -41,9 +41,6 @@ def update_component():
         return jsonify({"error": "At least one of 'caption' or 'bbox' must be provided"}), 400
     if new_bbox is not None and "corners" not in new_bbox:
         return jsonify({"error": "bbox must have 'corners' key"}), 400
-
-    if new_bbox is not None:
-        new_bbox = transform_bbox(new_bbox, transform_type="3DViewer_to_COLMAP")
 
     try:
         comp_id_int = int(component_id)
@@ -77,9 +74,6 @@ def add_component():
         return jsonify({"error": f"Dataset '{dataset_name}' not found in database."}), 404
     if bbox and "corners" not in bbox:
         return jsonify({"error": "bbox must have 'corners' key if provided"}), 400
-
-    if bbox:
-        bbox = transform_bbox(bbox, transform_type="3DViewer_to_COLMAP")
 
     component_id = database.get_next_component_id(dataset_name)
 
