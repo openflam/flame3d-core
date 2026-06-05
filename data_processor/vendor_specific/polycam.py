@@ -357,12 +357,12 @@ def process_polycam(
 # Config-dict entry point
 # ═══════════════════════════════════════════════════════════════════════════
 
-def process_polycam_from_config(config: dict) -> dict:
-    """Run the Polycam pipeline using the master config dictionary.
+def process_polycam_from_config(config: dict, dataset_name: str) -> dict:
+    """Run the Polycam pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["polycam"]``.
+    Reads parameters from ``config["polycam"]``.  The dataset name is passed
+    separately (it is not read from the config).
     """
-    dataset_name = config["dataset_name"]
     polycam_cfg = config.get("polycam", {})
     depth_tolerance = polycam_cfg.get("depth_tolerance", 0.05)
     return process_polycam(dataset_name, depth_tolerance=depth_tolerance)
@@ -373,40 +373,10 @@ def process_polycam_from_config(config: dict) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    import argparse
-    import json
+    from config_cli import parse_config_args
 
-    parser = argparse.ArgumentParser(
+    config, dataset_name = parse_config_args(
         description="Process a Polycam raw-data export and write COLMAP files.",
     )
-    parser.add_argument(
-        "dataset_name",
-        nargs="?",
-        default=None,
-        help="Name of the dataset directory under data/ (e.g. ProjectStudio)",
-    )
-    parser.add_argument(
-        "--depth-tolerance",
-        type=float,
-        default=None,
-        help="Relative depth tolerance for visibility checks (default: 0.05)",
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides positional args)",
-    )
-
-    args = parser.parse_args()
-
-    if args.config:
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        process_polycam_from_config(config)
-    else:
-        if args.dataset_name is None:
-            parser.error("dataset_name is required when --config is not provided")
-        depth_tolerance = args.depth_tolerance if args.depth_tolerance is not None else 0.05
-        process_polycam(args.dataset_name, depth_tolerance=depth_tolerance)
+    process_polycam_from_config(config, dataset_name)
 

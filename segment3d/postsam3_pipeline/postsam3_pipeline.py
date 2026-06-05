@@ -485,13 +485,13 @@ def run_pipeline(
 # ---------------------------------------------------------------------------
 
 
-def run_pipeline_from_config(config: dict) -> None:
-    """Run the post-SAM3 pipeline using the master config dictionary.
+def run_pipeline_from_config(config: dict, dataset_name: str) -> None:
+    """Run the post-SAM3 pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["postsam3_pipeline"]``.
-    Any keys not present in the config fall back to ``DEFAULT_PARAMETERS``.
+    Reads parameters from ``config["postsam3_pipeline"]``.  The dataset name is
+    passed separately (it is not read from the config).  Any keys not present in
+    the config fall back to ``DEFAULT_PARAMETERS``.
     """
-    dataset_name = config["dataset_name"]
     ps_cfg = config.get("postsam3_pipeline", {})
 
     def _get(key: str):
@@ -538,95 +538,10 @@ def run_pipeline_from_config(config: dict) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run the post-SAM3 per-object pipeline",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Pipeline Steps:
-  1. Associate per-object SAM3 masks with COLMAP 3D points
-  2. Build object mask connectivity graph and extract connected components
-  3. Clean connected components (DBSCAN noise removal + multi-cluster splitting)
-  4. Compute 3D bounding boxes for each connected component
-  5. Segment and crop images using connected component masks
-  6. Generate captions for each component using VLM
+    from config_cli import parse_config_args
 
-Configuration:
-  Dataset configurations are defined in segment3d/config.py
-        """,
+    config, dataset_name = parse_config_args(
+        description="Run the post-SAM3 per-object pipeline.",
     )
-
-    # Dataset selection
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default=None,
-        help="Dataset to process",
-    )
-
-    # Config file
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides other args)",
-    )
-
-    # Skip flags
-    parser.add_argument(
-        "--skip-association",
-        action="store_true",
-        help="Skip 2D-3D association step (use existing associations)",
-    )
-    parser.add_argument(
-        "--skip-graph",
-        action="store_true",
-        help="Skip mask graph building step (use existing graph)",
-    )
-    parser.add_argument(
-        "--skip-clean",
-        action="store_true",
-        help="Skip DBSCAN component cleaning step (use existing connected_components.json)",
-    )
-    parser.add_argument(
-        "--skip-bbox",
-        action="store_true",
-        help="Skip 3D bounding box computation step (use existing bbox_corners.json)",
-    )
-    parser.add_argument(
-        "--skip-segment-crops",
-        action="store_true",
-        help="Skip image cropping step (use existing crops)",
-    )
-    parser.add_argument(
-        "--skip-caption",
-        action="store_true",
-        help="Skip VLM captioning step",
-    )
-    parser.add_argument(
-        "--skip-clip",
-        action="store_true",
-        help="Skip CLIP embedding generation step",
-    )
-
-    args = parser.parse_args()
-
-    if args.config:
-        import json as _json
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = _json.load(f)
-        run_pipeline_from_config(config)
-    else:
-        if args.dataset is None:
-            parser.error("--dataset is required when --config is not provided")
-
-        run_pipeline(
-            dataset_name=args.dataset,
-            skip_association=args.skip_association,
-            skip_graph=args.skip_graph,
-            skip_clean=args.skip_clean,
-            skip_bbox=args.skip_bbox,
-            skip_segment_crops=args.skip_segment_crops,
-            skip_caption=args.skip_caption,
-            skip_clip=args.skip_clip,
-        )
+    run_pipeline_from_config(config, dataset_name)
 

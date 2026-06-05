@@ -426,12 +426,12 @@ def run_sam3(
 # ---------------------------------------------------------------------------
 
 
-def run_sam3_from_config(config: dict) -> None:
-    """Run the SAM3 pipeline using the master config dictionary.
+def run_sam3_from_config(config: dict, dataset_name: str) -> None:
+    """Run the SAM3 pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["sam3"]``.
+    Reads parameters from ``config["sam3"]``.  The dataset name is passed
+    separately (it is not read from the config).
     """
-    dataset_name = config["dataset_name"]
     sam_cfg = config.get("sam3", {})
 
     objects_json = sam_cfg.get("objects_to_frames_path")
@@ -452,81 +452,10 @@ def run_sam3_from_config(config: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run SAM3 video predictor on per-object frame sequences.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--dataset",
-        default=None,
-        help="Dataset name (must match a folder under data/ and outputs/).",
-    )
-    parser.add_argument(
-        "--objects",
-        nargs="+",
-        default=None,
-        metavar="OBJECT",
-        help="If given, process only these object names (case-insensitive).",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help=(
-            "Skip (object, sequence) pairs whose output directory already "
-            "contains .npz files."
-        ),
-    )
-    parser.add_argument(
-        "--objects-json",
-        default=None,
-        metavar="PATH",
-        help=(
-            "Override path to objects_to_frames.json "
-            "(default: <outputs_dir>/objects_inventory/objects_to_frames.json)."
-        ),
-    )
-    parser.add_argument(
-        "--tmp-root",
-        default=None,
-        metavar="DIR",
-        help="Directory in which temporary JPEG folders are created.",
-    )
-    parser.add_argument(
-        "--save-images",
-        action="store_true",
-        help=(
-            "Also save overlay JPEG images showing each mask rendered on top of "
-            "the original frame, using SAM3's render_masklet_frame utility."
-        ),
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides other args)",
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
-    args = _parse_args()
+    from config_cli import parse_config_args
 
-    if args.config:
-        import json as _json
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = _json.load(f)
-        run_sam3_from_config(config)
-    else:
-        if args.dataset is None:
-            print("Error: --dataset is required when --config is not provided",
-                  file=sys.stderr)
-            sys.exit(1)
-        run_sam3(
-            dataset_name=args.dataset,
-            objects_filter=args.objects,
-            resume=args.resume,
-            objects_to_frames_path=Path(args.objects_json) if args.objects_json else None,
-            tmp_root=Path(args.tmp_root) if args.tmp_root else None,
-            save_images=args.save_images,
-        )
+    config, dataset_name = parse_config_args(
+        description="Run SAM3 video predictor on per-object frame sequences.",
+    )
+    run_sam3_from_config(config, dataset_name)

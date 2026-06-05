@@ -1,10 +1,10 @@
 """
 data_process.py – Orchestrate the full data-processing pipeline.
 
-Takes a config dictionary (or path to master_config.json) containing the
-dataset name, data source type, and all per-step parameters, then runs every
-pipeline step in the correct conda environment inside the running Docker
-container.
+Takes a config dictionary (or path to default_config.json) containing the
+data source type and all per-step parameters — plus a dataset name passed
+separately — then runs every pipeline step in the correct conda environment
+inside the running Docker container.
 
 Currently supported data sources:
   • polycam
@@ -83,14 +83,15 @@ class PipelineResult:
 def _run_step_subprocess(
     step: PipelineStep,
     config_path: str,
+    dataset_name: str,
     *,
     cwd: Path = _WORKDIR,
 ) -> StepResult:
     """Run a pipeline step as a ``conda run`` subprocess.
 
-    The subprocess receives ``--config <path>`` pointing to the same
-    master_config.json on disk.  stdout/stderr are streamed so the caller
-    can follow along in real time.
+    The subprocess receives ``--config <path>`` pointing to the same config
+    file on disk plus ``--dataset-name <name>``.  stdout/stderr are streamed so
+    the caller can follow along in real time.
     """
     cmd = [
         "conda", "run",
@@ -98,6 +99,7 @@ def _run_step_subprocess(
         "-n", step.conda_env,
         "python", "-m", step.module,
         "--config", config_path,
+        "--dataset-name", dataset_name,
     ]
 
     logger.info("Running: %s", " ".join(cmd))
@@ -160,7 +162,9 @@ _INLINE_HANDLERS: Dict[str, Any] = {
 }
 
 
-def _run_step_inline(step: PipelineStep, config: Dict[str, Any]) -> StepResult:
+def _run_step_inline(
+    step: PipelineStep, config: Dict[str, Any], dataset_name: str
+) -> StepResult:
     """Run a pipeline step by calling its ``*_from_config`` function directly.
 
     This is used for lighter steps that don't require GPU-memory isolation.
@@ -172,7 +176,7 @@ def _run_step_inline(step: PipelineStep, config: Dict[str, Any]) -> StepResult:
         if handler is None:
             raise ValueError(f"No inline handler for step: {step.name}")
 
-        handler(config)
+        handler(config, dataset_name)
 
         elapsed = time.monotonic() - start
         return StepResult(name=step.name, success=True, duration_seconds=elapsed)
@@ -192,11 +196,12 @@ def _run_step(
     step: PipelineStep,
     config: Dict[str, Any],
     config_path: str,
+    dataset_name: str,
 ) -> StepResult:
     """Dispatch a step to the appropriate runner."""
     if step.run_as_subprocess:
-        return _run_step_subprocess(step, config_path)
-    return _run_step_inline(step, config)
+        return _run_step_subprocess(step, config_path, dataset_name)
+    return _run_step_inline(step, config, dataset_name)
 
 
 # ── Public API ────────────────────────────────────────────────────────────
@@ -210,28 +215,29 @@ ProgressCallback = Callable[[Dict[str, Any]], None]
 
 def process_data(
     config: Dict[str, Any],
+    dataset_name: str,
     config_path: Optional[str] = None,
     progress_callback: Optional[ProgressCallback] = None,
 ) -> PipelineResult:
-    """Run the full processing pipeline using *config*.
+    """Run the full processing pipeline using *config* for dataset *dataset_name*.
 
     Parameters
     ----------
     config:
-        The master configuration dictionary.  Must contain at least
-        ``"dataset_name"`` and ``"data_source"``.  Per-step parameters are
-        read from nested dicts (e.g. ``config["polycam"]``).
+        The configuration dictionary.  Must contain at least ``"data_source"``.
+        Per-step parameters are read from nested dicts (e.g. ``config["polycam"]``).
+    dataset_name:
+        Name of the dataset to process.  Passed separately to every step (it is
+        not read from the config).
     config_path:
-        Filesystem path to the master_config.json file.  Passed to
-        subprocess steps via ``--config``.  Required when the pipeline
-        includes subprocess steps.
+        Filesystem path to the config file.  Passed to subprocess steps via
+        ``--config``.  Required when the pipeline includes subprocess steps.
 
     Returns
     -------
     PipelineResult
         Aggregated result with per-step timing and success information.
     """
-    dataset_name = config["dataset_name"]
     data_source_str = config["data_source"]
     start_from_step = config.get("start_from_step")
 
@@ -268,7 +274,7 @@ def process_data(
         raise ValueError(
             "config_path is required when the pipeline includes subprocess "
             "steps (SAM3, postSAM3, captioning).  Pass the path to your "
-            "master_config.json."
+            "config file."
         )
 
     pipeline_start = time.monotonic()
@@ -294,7 +300,7 @@ def process_data(
                 "total": total,
             })
 
-        step_result = _run_step(step, config, config_path or "")
+        step_result = _run_step(step, config, config_path or "", dataset_name)
         pipeline_result.steps.append(step_result)
 
         if progress_callback is not None:
@@ -361,6 +367,8 @@ def _print_summary(result: PipelineResult) -> None:
 
 def main() -> None:
     """CLI entry point for the data-processing pipeline."""
+    from config_cli import add_config_args, load_config, resolve_dataset_name
+
     # Build the list of valid step names for help text.
     _example_steps = [s.name for s in get_pipeline_steps("polycam")]
 
@@ -369,40 +377,26 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""\
 examples:
-  python -m server.utils.data_process --config server/master_config.json
-  python -m server.utils.data_process --config server/master_config.json \\
-      --start-from-step sam3_segmentation
+  python -m server.utils.data_process --config server/default_config.json
+  python -m server.utils.data_process --config server/default_config.json \\
+      --dataset-name MyDataset
+
+To resume from a given step, set "start_from_step" in the config file.
 
 pipeline steps (polycam):
   {', '.join(_example_steps)}
 """,
     )
 
-    parser.add_argument(
-        "--config",
-        required=True,
-        metavar="PATH",
-        help="Path to master_config.json",
-    )
-    parser.add_argument(
-        "--start-from-step",
-        default=None,
-        metavar="STEP",
-        help="Resume the pipeline from this step (overrides config). "
-        f"Valid steps: {', '.join(_example_steps)}",
-    )
+    add_config_args(parser)
 
     args = parser.parse_args()
 
     config_path = str(Path(args.config).resolve())
-    with open(config_path, "r", encoding="utf-8") as f:
-        config: Dict[str, Any] = json.load(f)
+    config: Dict[str, Any] = load_config(config_path)
+    dataset_name = resolve_dataset_name(config, args.dataset_name)
 
-    # CLI overrides
-    if args.start_from_step is not None:
-        config["start_from_step"] = args.start_from_step
-
-    result = process_data(config, config_path=config_path)
+    result = process_data(config, dataset_name, config_path=config_path)
     sys.exit(0 if result.success else 1)
 
 

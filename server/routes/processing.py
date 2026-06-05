@@ -2,7 +2,8 @@
 
 Routes
 ------
-GET  /api/config              → default master_config.json contents
+GET  /api/config              → default_config.json contents (for pre-filling)
+GET  /api/config/schema       → config_schema.json (field types + allowed values)
 GET  /api/steps?source=...    → ordered pipeline steps for a data source
 POST /api/upload              → save uploaded zip + config, start pipeline
 GET  /api/jobs/<job_id>       → live status of a running/finished job
@@ -32,8 +33,10 @@ from server.utils.job_manager import job_manager
 
 processing_bp = Blueprint("processing", __name__, url_prefix="/api")
 
-# Default config shipped with the server.
-_MASTER_CONFIG_PATH = Path(__file__).resolve().parent.parent / "master_config.json"
+# Default config + its schema, shipped with the server.
+_SERVER_DIR = Path(__file__).resolve().parent.parent
+_DEFAULT_CONFIG_PATH = _SERVER_DIR / "default_config.json"
+_CONFIG_SCHEMA_PATH = _SERVER_DIR / "config_schema.json"
 
 # Dataset names become directory names under data/ and outputs/, so keep them
 # to a safe character set (no path separators, no "..").
@@ -46,10 +49,18 @@ def _valid_dataset_name(name: str) -> bool:
 
 @processing_bp.route("/config", methods=["GET"])
 def get_default_config():
-    """Return the default master_config.json so the UI can pre-fill the form."""
-    with open(_MASTER_CONFIG_PATH, "r", encoding="utf-8") as f:
+    """Return the default_config.json so the UI can pre-fill the form."""
+    with open(_DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
     return jsonify(config), 200
+
+
+@processing_bp.route("/config/schema", methods=["GET"])
+def get_config_schema():
+    """Return config_schema.json so the UI can render the config form."""
+    with open(_CONFIG_SCHEMA_PATH, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+    return jsonify(schema), 200
 
 
 @processing_bp.route("/steps", methods=["GET"])
@@ -175,7 +186,7 @@ def get_dataset_config(name: str):
         with open(saved, "r", encoding="utf-8") as f:
             return jsonify(json.load(f)), 200
 
-    with open(_MASTER_CONFIG_PATH, "r", encoding="utf-8") as f:
+    with open(_DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
     config["dataset_name"] = name
     return jsonify(config), 200

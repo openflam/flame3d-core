@@ -6,14 +6,17 @@ import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
+import TextField from "@mui/material/TextField";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ConfigForm from "./ConfigForm";
 import {
+  fetchConfigSchema,
   fetchDefaultConfig,
   uploadAndProcess,
   type Config,
+  type ConfigSchema,
 } from "../api";
 
 interface Props {
@@ -23,8 +26,11 @@ interface Props {
 }
 
 export default function UploadForm({ onStarted, onCancel }: Props) {
+  const [schema, setSchema] = useState<ConfigSchema | null>(null);
   const [defaults, setDefaults] = useState<Config | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
+  // Dataset name is edited separately from the rest of the config.
+  const [datasetName, setDatasetName] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -33,22 +39,30 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchDefaultConfig()
-      .then((cfg) => {
+    Promise.all([fetchConfigSchema(), fetchDefaultConfig()])
+      .then(([sch, cfg]) => {
+        setSchema(sch);
         setDefaults(cfg);
         setConfig(cfg);
+        setDatasetName(String(cfg.dataset_name ?? ""));
       })
       .catch((e) => setLoadError((e as Error).message));
   }, []);
 
   const handleSubmit = async () => {
     if (!file || !config) return;
+    const name = datasetName.trim();
+    if (!name) {
+      setSubmitError("Dataset name is required");
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     setUploadProgress(0);
     try {
-      const { job_id } = await uploadAndProcess(file, config, setUploadProgress);
-      const name = String(config.dataset_name ?? "");
+      // The dataset name is carried in the config the server persists.
+      const payload = { ...config, dataset_name: name };
+      const { job_id } = await uploadAndProcess(file, payload, setUploadProgress);
       onStarted(name, job_id);
     } catch (e) {
       setSubmitError((e as Error).message);
@@ -83,12 +97,21 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
         </Alert>
       )}
 
-      {config && defaults && (
+      {config && schema && (
         <>
           <Paper variant="outlined" sx={{ p: 2.5, mb: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-              Dataset archive
+              Dataset
             </Typography>
+            <TextField
+              label="Dataset name"
+              size="small"
+              fullWidth
+              value={datasetName}
+              onChange={(e) => setDatasetName(e.target.value)}
+              sx={{ mb: 2 }}
+              helperText="Becomes the directory name under data/ and outputs/."
+            />
             <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
               <Button
                 component="label"
@@ -109,7 +132,7 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
             </Box>
           </Paper>
 
-          <ConfigForm config={config} defaults={defaults} onChange={setConfig} />
+          <ConfigForm schema={schema} config={config} onChange={setConfig} />
 
           {submitError && (
             <Alert severity="error" sx={{ mt: 2 }}>
@@ -128,7 +151,7 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
                   <PlayArrowIcon />
                 )
               }
-              disabled={!file || submitting}
+              disabled={!file || !datasetName.trim() || submitting}
               onClick={handleSubmit}
             >
               {!submitting
@@ -138,7 +161,12 @@ export default function UploadForm({ onStarted, onCancel }: Props) {
                   : `Uploading… ${uploadPct}%`}
             </Button>
             <Button
-              onClick={() => defaults && setConfig(defaults)}
+              onClick={() => {
+                if (defaults) {
+                  setConfig(defaults);
+                  setDatasetName(String(defaults.dataset_name ?? ""));
+                }
+              }}
               disabled={submitting}
             >
               Reset defaults

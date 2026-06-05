@@ -87,6 +87,7 @@ def run_pipeline_task(
     from server.utils.data_process import process_data
     from server.utils.pipeline_steps import get_pipeline_steps
 
+    dataset_name = config["dataset_name"]
     data_source = config["data_source"]
     steps = get_pipeline_steps(data_source)
 
@@ -139,6 +140,7 @@ def run_pipeline_task(
         _prepare_inputs(config, config_path, copy_from)
         result = process_data(
             config,
+            dataset_name,
             config_path=config_path,
             progress_callback=on_progress,
         )

@@ -11,6 +11,33 @@ export type ConfigValue =
 
 export type Config = { [key: string]: ConfigValue };
 
+// ── Config schema (from server/config_schema.json) ─────────────────────────
+// Describes how to render each config field. A leaf has a `type`; anything
+// without one is a section whose keys are nested fields.
+
+export type SchemaType = "string" | "number" | "integer" | "boolean" | "array";
+
+export interface ConfigSchemaLeaf {
+  type: SchemaType;
+  possible_values?: ConfigValue[];
+  nullable?: boolean;
+}
+
+export type ConfigSchemaNode =
+  | ConfigSchemaLeaf
+  | { [key: string]: ConfigSchemaNode };
+
+export type ConfigSchema = { [key: string]: ConfigSchemaNode };
+
+/** A schema node is a leaf when it carries a `type`; otherwise it's a section. */
+export function isSchemaLeaf(node: ConfigSchemaNode): node is ConfigSchemaLeaf {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    typeof (node as ConfigSchemaLeaf).type === "string"
+  );
+}
+
 export type StepStatus =
   | "pending"
   | "running"
@@ -63,6 +90,11 @@ async function asJson<T>(res: Response): Promise<T> {
 
 export async function fetchDefaultConfig(): Promise<Config> {
   return asJson<Config>(await fetch("/api/config"));
+}
+
+/** The schema describing the config form's fields, types, and allowed values. */
+export async function fetchConfigSchema(): Promise<ConfigSchema> {
+  return asJson<ConfigSchema>(await fetch("/api/config/schema"));
 }
 
 /**

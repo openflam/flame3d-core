@@ -208,12 +208,12 @@ def identify_all_frames_cli(
         print(f"  Max: {max_objects}")
 
 
-def identify_all_frames_from_config(config: dict) -> None:
-    """Run the object identification pipeline using the master config dictionary.
+def identify_all_frames_from_config(config: dict, dataset_name: str) -> None:
+    """Run the object identification pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["identify_objects"]``.
+    Reads parameters from ``config["identify_objects"]``.  The dataset name is
+    passed separately (it is not read from the config).
     """
-    dataset_name = config["dataset_name"]
     io_cfg = config.get("identify_objects", {})
     identify_all_frames_cli(
         dataset_name=dataset_name,
@@ -227,76 +227,12 @@ def identify_all_frames_from_config(config: dict) -> None:
 
 def main() -> None:
     """Main entry point for CLI."""
-    parser = argparse.ArgumentParser(
-        description="Build an objects inventory by running a VLM on every frame"
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default=None,
-        help="Name of the dataset to process",
-    )
-    parser.add_argument(
-        "--identifier-type",
-        type=str,
-        default="vllm",
-        choices=["vllm", "openai"],
-        help="Type of identifier to use: 'vllm' (local GPU inference) or 'openai' (OpenAI API). Default: vllm",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="Qwen/Qwen3-VL-8B-Instruct",
-        help="Model to use (default: Qwen/Qwen3-VL-8B-Instruct)",
-    )
-    parser.add_argument(
-        "--device",
-        type=int,
-        default=0,
-        help="GPU device ID to use (default: 0)",
-    )
-    parser.add_argument(
-        "--max-frames",
-        type=int,
-        default=None,
-        help="Maximum number of frames to process (default: process all)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Number of frames to process in each batch (default: 32)",
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides other args)",
-    )
+    from config_cli import parse_config_args
 
-    args = parser.parse_args()
-
-    if args.config:
-        import json
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        identify_all_frames_from_config(config)
-    else:
-        if args.dataset is None:
-            parser.error("--dataset is required when --config is not provided")
-        if args.max_frames is not None and args.max_frames < 1:
-            parser.error("--max-frames must be at least 1")
-        if args.batch_size < 1:
-            parser.error("--batch-size must be at least 1")
-
-        identify_all_frames_cli(
-            dataset_name=args.dataset,
-            identifier_type=args.identifier_type,
-            model=args.model,
-            device=args.device,
-            max_frames=args.max_frames,
-            batch_size=args.batch_size,
-        )
+    config, dataset_name = parse_config_args(
+        description="Build an objects inventory by running a VLM on every frame",
+    )
+    identify_all_frames_from_config(config, dataset_name)
 
 
 if __name__ == "__main__":

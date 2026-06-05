@@ -1,0 +1,101 @@
+{
+  "data_source": { "type": "string", "possible_values": ["polycam"] },
+  "start_from_step": {
+    "type": "string",
+    "nullable": true,
+    "possible_values": [
+      "polycam_process",
+      "identify_objects",
+      "normalize_labels",
+      "sam3_segmentation",
+      "postsam3_pipeline",
+      "captioning"
+    ]
+  },
+
+  "polycam": {
+    "depth_tolerance": { "type": "number" }
+  },
+
+  "identify_objects": {
+    "identifier_type": { "type": "string", "possible_values": ["vllm", "openai"] },
+    "model": { "type": "string" },
+    "device": { "type": "integer" },
+    "max_frames": { "type": "integer", "nullable": true },
+    "batch_size": { "type": "integer" }
+  },
+
+  "normalize_labels": {
+    "distance_threshold": { "type": "number" },
+    "clip_model": { "type": "string" },
+    "clip_pretrained": { "type": "string" },
+    "device": { "type": "string", "nullable": true },
+    "skip_lemmatize": { "type": "boolean" },
+    "fill_holes": { "type": "boolean" },
+    "max_gap": { "type": "integer" },
+    "objects_to_frames": { "type": "boolean" },
+    "min_sequence_length": { "type": "integer" }
+  },
+
+  "sam3": {
+    "objects_filter": { "type": "array", "nullable": true },
+    "resume": { "type": "boolean" },
+    "objects_to_frames_path": { "type": "string", "nullable": true },
+    "tmp_root": { "type": "string", "nullable": true },
+    "save_images": { "type": "boolean" }
+  },
+
+  "postsam3_pipeline": {
+    "skip_association": { "type": "boolean" },
+    "skip_graph": { "type": "boolean" },
+    "skip_clean": { "type": "boolean" },
+    "skip_bbox": { "type": "boolean" },
+    "skip_segment_crops": { "type": "boolean" },
+    "skip_caption": { "type": "boolean" },
+    "skip_clip": { "type": "boolean" },
+
+    "discard_objects_list": { "type": "array" },
+    "segment_dbscan_eps": { "type": "number" },
+    "segment_dbscan_min_samples": { "type": "integer" },
+
+    "intersection_type": { "type": "string", "possible_values": ["geometric", "id_based"] },
+    "voxel_size_cm": { "type": "number" },
+    "K": { "type": "integer" },
+    "tau": { "type": "number" },
+    "clip_distance_threshold": { "type": "number" },
+    "save_segment_images": { "type": "boolean" },
+    "min_points": { "type": "integer" },
+    "min_points_in_3d_segment": { "type": "integer" },
+
+    "component_dbscan_eps": { "type": "number" },
+    "component_dbscan_min_samples": { "type": "integer" },
+    "component_dbscan_min_points": { "type": "integer" },
+    "split_components": { "type": "boolean" },
+
+    "percentile": { "type": "number" },
+
+    "crop_type": { "type": "string", "possible_values": ["segment", "bbox"] },
+    "top_n": { "type": "integer" },
+    "min_fraction": { "type": "number" },
+
+    "caption_n_images": { "type": "integer" },
+    "captioner_type": { "type": "string", "possible_values": ["vllm", "openai"] },
+    "caption_model": { "type": "string" },
+    "caption_device": { "type": "integer" },
+    "caption_batch_size": { "type": "integer" },
+
+    "clip_model": { "type": "string" },
+    "clip_pretrained": { "type": "string" },
+    "clip_batch_size": { "type": "integer" },
+    "clip_device": { "type": "integer" }
+  },
+
+  "captioning": {
+    "n_images": { "type": "integer" },
+    "captioner_type": { "type": "string", "possible_values": ["vllm", "openai"] },
+    "model": { "type": "string" },
+    "device": { "type": "integer" },
+    "max_components": { "type": "integer", "nullable": true },
+    "batch_size": { "type": "integer" }
+  }
+}

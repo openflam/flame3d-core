@@ -256,12 +256,12 @@ def caption_all_components_cli(
 
 
 
-def caption_all_from_config(config: dict) -> None:
-    """Run the captioning pipeline using the master config dictionary.
+def caption_all_from_config(config: dict, dataset_name: str) -> None:
+    """Run the captioning pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["captioning"]``.
+    Reads parameters from ``config["captioning"]``.  The dataset name is passed
+    separately (it is not read from the config).
     """
-    dataset_name = config["dataset_name"]
     cap_cfg = config.get("captioning", {})
     caption_all_components_cli(
         dataset_name=dataset_name,
@@ -276,84 +276,12 @@ def caption_all_from_config(config: dict) -> None:
 
 def main() -> None:
     """Main entry point for CLI."""
+    from config_cli import parse_config_args
 
-    parser = argparse.ArgumentParser(
-        description="Caption components using a Vision Language Model"
+    config, dataset_name = parse_config_args(
+        description="Caption components using a Vision Language Model.",
     )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default=None,
-        help="Name of the dataset to process",
-    )
-    parser.add_argument(
-        "--n-images",
-        type=int,
-        default=1,
-        help="Number of top images to use per component (default: 1)",
-    )
-    parser.add_argument(
-        "--captioner-type",
-        type=str,
-        default="vllm",
-        help="Type of captioner to use (default: vllm)",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="Qwen/Qwen2.5-VL-7B-Instruct",
-        help="Model to use (default: Qwen/Qwen2.5-VL-7B-Instruct)",
-    )
-    parser.add_argument(
-        "--device",
-        type=int,
-        default=0,
-        help="GPU device ID to use (default: 0)",
-    )
-    parser.add_argument(
-        "--max-components",
-        type=int,
-        default=None,
-        help="Maximum number of components to process (default: process all)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=512,
-        help="Number of components to process in each batch (default: 512)",
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides other args)",
-    )
-
-    args = parser.parse_args()
-
-    if args.config:
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        caption_all_from_config(config)
-    else:
-        if args.dataset is None:
-            parser.error("--dataset is required when --config is not provided")
-        if args.n_images < 1:
-            parser.error("--n-images must be at least 1")
-        if args.max_components is not None and args.max_components < 1:
-            parser.error("--max-components must be at least 1")
-        if args.batch_size < 1:
-            parser.error("--batch-size must be at least 1")
-
-        caption_all_components_cli(
-            dataset_name=args.dataset,
-            n_images=args.n_images,
-            captioner_type=args.captioner_type,
-            model=args.model,
-            device=args.device,
-            max_components=args.max_components,
-            batch_size=args.batch_size,
-        )
+    caption_all_from_config(config, dataset_name)
 
 
 if __name__ == "__main__":

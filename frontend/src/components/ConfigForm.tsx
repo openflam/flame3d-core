@@ -5,12 +5,20 @@ import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ConfigField, { kindOf } from "./ConfigField";
-import type { Config, ConfigValue } from "../api";
+import ConfigField, { kindOfType } from "./ConfigField";
+import {
+  isSchemaLeaf,
+  type Config,
+  type ConfigSchema,
+  type ConfigSchemaLeaf,
+  type ConfigValue,
+} from "../api";
 
 interface Props {
+  /** Field metadata (types + allowed values) describing how to render. */
+  schema: ConfigSchema;
+  /** Current config values being edited. */
   config: Config;
-  defaults: Config;
   onChange: (config: Config) => void;
 }
 
@@ -31,20 +39,20 @@ function isObject(v: ConfigValue): v is Record<string, ConfigValue> {
 }
 
 /**
- * Renders the full master config as a form. Top-level primitive fields go in a
- * "General" card; each nested object becomes a collapsible section. The widget
- * for every leaf is generated from the default config's value types, so the
- * whole form is data-driven — no per-field code.
+ * Renders the config as a form driven entirely by `schema`. Top-level leaf
+ * fields go in a "General" card; each nested section becomes a collapsible
+ * accordion. The widget for every field comes from its schema entry (type +
+ * allowed values), so the whole form is data-driven — no per-field code.
  */
-export default function ConfigForm({ config, defaults, onChange }: Props) {
+export default function ConfigForm({ schema, config, onChange }: Props) {
   const set = (path: string[], value: ConfigValue) =>
     onChange(setAtPath(config, path, value) as Config);
 
-  const topKeys = Object.keys(defaults);
-  const generalKeys = topKeys.filter((k) => !isObject(defaults[k]));
-  const sectionKeys = topKeys.filter((k) => isObject(defaults[k]));
+  const topKeys = Object.keys(schema);
+  const generalKeys = topKeys.filter((k) => isSchemaLeaf(schema[k]));
+  const sectionKeys = topKeys.filter((k) => !isSchemaLeaf(schema[k]));
 
-  const renderLeaf = (path: string[], key: string, defVal: ConfigValue) => {
+  const renderLeaf = (path: string[], key: string, leaf: ConfigSchemaLeaf) => {
     // Walk `config` along the path to find the current value.
     let current: ConfigValue = config;
     for (const p of path) {
@@ -54,8 +62,10 @@ export default function ConfigForm({ config, defaults, onChange }: Props) {
       <ConfigField
         key={path.join(".")}
         fieldKey={key}
-        kind={kindOf(defVal)}
+        kind={kindOfType(leaf.type)}
         value={current}
+        possibleValues={leaf.possible_values}
+        nullable={leaf.nullable}
         onChange={(v) => set(path, v)}
       />
     );
@@ -74,13 +84,15 @@ export default function ConfigForm({ config, defaults, onChange }: Props) {
             gap: 2,
           }}
         >
-          {generalKeys.map((k) => renderLeaf([k], k, defaults[k]))}
+          {generalKeys.map((k) =>
+            renderLeaf([k], k, schema[k] as ConfigSchemaLeaf),
+          )}
         </Box>
       </Paper>
 
       {sectionKeys.map((section) => {
-        const sectionDefaults = defaults[section] as Record<string, ConfigValue>;
-        const keys = Object.keys(sectionDefaults);
+        const sectionSchema = schema[section] as ConfigSchema;
+        const keys = Object.keys(sectionSchema);
         return (
           <Accordion
             key={section}
@@ -101,7 +113,7 @@ export default function ConfigForm({ config, defaults, onChange }: Props) {
                 }}
               >
                 {keys.map((k) =>
-                  renderLeaf([section, k], k, sectionDefaults[k]),
+                  renderLeaf([section, k], k, sectionSchema[k] as ConfigSchemaLeaf),
                 )}
               </Box>
             </AccordionDetails>

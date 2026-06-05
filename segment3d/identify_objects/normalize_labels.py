@@ -578,13 +578,13 @@ def normalize_inventory_cli(
     )
 
 
-def normalize_labels_from_config(config: dict) -> None:
-    """Run the full normalize-labels pipeline using the master config dictionary.
+def normalize_labels_from_config(config: dict, dataset_name: str) -> None:
+    """Run the full normalize-labels pipeline using the config dictionary.
 
-    Reads ``config["dataset_name"]`` and ``config["normalize_labels"]``.
+    Reads parameters from ``config["normalize_labels"]``.  The dataset name is
+    passed separately (it is not read from the config).
     Runs: normalize → fill_holes → objects_to_frames (unless disabled).
     """
-    dataset_name = config["dataset_name"]
     nl_cfg = config.get("normalize_labels", {})
 
     start_time = time.time()
@@ -632,133 +632,13 @@ def normalize_labels_from_config(config: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Normalize objects_inventory.json labels using lemmatization + "
-        "CLIP-based semantic clustering."
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default=None,
-        help="Name of the dataset to process.",
-    )
-    parser.add_argument(
-        "--distance-threshold",
-        type=float,
-        default=0.12,
-        help="Cosine distance threshold for agglomerative clustering (default: 0.12).",
-    )
-    parser.add_argument(
-        "--clip-model",
-        type=str,
-        default="ViT-H-14",
-        help="OpenCLIP model name (default: ViT-H-14).",
-    )
-    parser.add_argument(
-        "--clip-pretrained",
-        type=str,
-        default="laion2B-s32B-b79K",
-        help="OpenCLIP pretrained tag (default: laion2B-s32B-b79K).",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=None,
-        help="Torch device string, e.g. 'cuda', 'cpu', 'cuda:1' (default: auto-detect).",
-    )
+    """CLI entry point: run the normalize-labels step from a config file."""
+    from config_cli import parse_config_args
 
-    parser.add_argument(
-        "--skip-lemmatize",
-        dest="skip_lemmatize",
-        action="store_true",
-        default=False,
-        help="Skip lemmatization and use raw labels directly for embedding and clustering.",
+    config, dataset_name = parse_config_args(
+        description="Normalize object labels via CLIP clustering.",
     )
-    parser.add_argument(
-        "--no-fill-holes",
-        dest="fill_holes",
-        action="store_false",
-        default=True,
-        help="Skip filling short gaps in each object's frame sequence (filling is on by default).",
-    )
-    parser.add_argument(
-        "--max-gap",
-        type=int,
-        default=3,
-        help="Maximum number of consecutive missing frames to fill (default: 3). "
-        "Only used when --fill-holes is set.",
-    )
-    parser.add_argument(
-        "--no-objects-to-frames",
-        dest="objects_to_frames",
-        action="store_false",
-        default=True,
-        help="Skip building the objects_to_frames.json index (built by default).",
-    )
-    parser.add_argument(
-        "--min-sequence-length",
-        type=int,
-        default=5,
-        help="Minimum consecutive-frame run length to include in objects_to_frames.json "
-        "(default: 5, i.e. sequences strictly longer than 5 frames).",
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        metavar="PATH",
-        help="Path to master_config.json (overrides other args)",
-    )
-
-    args = parser.parse_args()
-
-    if args.config:
-        import json as _json
-        with open(args.config, "r", encoding="utf-8") as f:
-            config = _json.load(f)
-        normalize_labels_from_config(config)
-    else:
-        if args.dataset is None:
-            parser.error("--dataset is required when --config is not provided")
-
-        start_time = time.time()
-
-        normalize_inventory_cli(
-            dataset_name=args.dataset,
-            distance_threshold=args.distance_threshold,
-            clip_model=args.clip_model,
-            clip_pretrained=args.clip_pretrained,
-            device=args.device,
-            skip_lemmatize=args.skip_lemmatize,
-        )
-
-        if args.fill_holes:
-            fill_holes_cli(dataset_name=args.dataset, max_gap=args.max_gap)
-
-        if args.objects_to_frames:
-            objects_to_frames_cli(
-                dataset_name=args.dataset,
-                min_sequence_length=args.min_sequence_length,
-            )
-
-        end_time = time.time()
-        duration = end_time - start_time
-
-        step_stats = {
-            "duration_seconds": duration,
-            "status": "completed",
-            "parameters": {
-                "normalize_distance_threshold": args.distance_threshold,
-                "normalize_clip_model": args.clip_model,
-                "normalize_clip_pretrained": args.clip_pretrained,
-                "normalize_skip_lemmatize": args.skip_lemmatize,
-                "normalize_fill_holes": args.fill_holes,
-                "normalize_max_gap": args.max_gap,
-                "normalize_objects_to_frames": args.objects_to_frames,
-                "normalize_min_sequence_length": args.min_sequence_length,
-            }
-        }
-
-        save_runtime_stats(args.dataset, "normalize_labels", step_stats)
+    normalize_labels_from_config(config, dataset_name)
 
 
 if __name__ == "__main__":

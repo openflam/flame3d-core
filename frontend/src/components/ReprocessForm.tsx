@@ -15,11 +15,12 @@ import TextField from "@mui/material/TextField";
 import ReplayIcon from "@mui/icons-material/Replay";
 import ConfigForm from "./ConfigForm";
 import {
+  fetchConfigSchema,
   fetchDatasetConfig,
-  fetchDefaultConfig,
   fetchSteps,
   reprocessDataset,
   type Config,
+  type ConfigSchema,
   type PipelineStepInfo,
 } from "../api";
 
@@ -35,7 +36,7 @@ function humanize(name: string): string {
 }
 
 export default function ReprocessForm({ datasetName, dataSource, onStarted }: Props) {
-  const [defaults, setDefaults] = useState<Config | null>(null);
+  const [schema, setSchema] = useState<ConfigSchema | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [steps, setSteps] = useState<PipelineStepInfo[]>([]);
   const [startFrom, setStartFrom] = useState<string>("");
@@ -47,12 +48,12 @@ export default function ReprocessForm({ datasetName, dataSource, onStarted }: Pr
 
   useEffect(() => {
     Promise.all([
-      fetchDefaultConfig(),
+      fetchConfigSchema(),
       fetchDatasetConfig(datasetName),
       fetchSteps(dataSource ?? "polycam"),
     ])
-      .then(([def, cfg, stepList]) => {
-        setDefaults(def);
+      .then(([sch, cfg, stepList]) => {
+        setSchema(sch);
         setConfig(cfg);
         setSteps(stepList);
         if (stepList.length > 0) setStartFrom(stepList[0].name);
@@ -94,7 +95,7 @@ export default function ReprocessForm({ datasetName, dataSource, onStarted }: Pr
         </Alert>
       )}
 
-      {config && defaults && (
+      {config && schema && (
         <>
           <Paper variant="outlined" sx={{ p: 2.5, mb: 2 }}>
             <FormControl size="small" fullWidth sx={{ mb: 2 }}>
@@ -136,7 +137,7 @@ export default function ReprocessForm({ datasetName, dataSource, onStarted }: Pr
             )}
           </Paper>
 
-          <ConfigForm config={config} defaults={defaults} onChange={setConfig} />
+          <ConfigForm schema={schema} config={config} onChange={setConfig} />
 
           {submitError && (
             <Alert severity="error" sx={{ mt: 2 }}>
