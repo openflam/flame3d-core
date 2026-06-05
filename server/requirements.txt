@@ -7,8 +7,19 @@
 #   flask          – web framework / app factory
 #   celery         – task client (send_task to RabbitMQ, read AsyncResult)
 #   redis          – client for the Celery result backend
-#   psycopg2-binary – Postgres/PostGIS client (dataset index)
+#   psycopg2-binary – Postgres/PostGIS client (dataset index + spatial tables)
+#
+# Search backend (integrated scan-to-map query server):
+#   litellm        – LLM client used by the tool-calling search agent
+#   python-dotenv  – loads API keys from a .env file (keys also read from env)
+#   bm25s + PyStemmer – BM25 keyword search over component captions
+#   numpy          – bbox geometry helpers / BM25 deps
 flask
 celery
 redis
 psycopg2-binary
+litellm
+python-dotenv
+bm25s
+PyStemmer
+numpy

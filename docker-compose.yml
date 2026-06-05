@@ -73,6 +73,10 @@ services:
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DATABASE_URL=postgresql://flame:flame@postgis:5432/flame3d
+      # LLM API keys for the tool-calling search agent. Put them in a repo-root
+      # .env file (gitignored); docker compose substitutes them here.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
       rabbitmq:
         condition: service_healthy
