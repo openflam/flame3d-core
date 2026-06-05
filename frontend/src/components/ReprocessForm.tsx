@@ -5,10 +5,6 @@ import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import TextField from "@mui/material/TextField";
@@ -17,11 +13,9 @@ import ConfigForm from "./ConfigForm";
 import {
   fetchConfigSchema,
   fetchDatasetConfig,
-  fetchSteps,
   reprocessDataset,
   type Config,
   type ConfigSchema,
-  type PipelineStepInfo,
 } from "../api";
 
 interface Props {
@@ -31,15 +25,9 @@ interface Props {
   onStarted: (datasetName: string, jobId: string) => void;
 }
 
-function humanize(name: string): string {
-  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export default function ReprocessForm({ datasetName, dataSource, onStarted }: Props) {
+export default function ReprocessForm({ datasetName, onStarted }: Props) {
   const [schema, setSchema] = useState<ConfigSchema | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
-  const [steps, setSteps] = useState<PipelineStepInfo[]>([]);
-  const [startFrom, setStartFrom] = useState<string>("");
   const [asCopy, setAsCopy] = useState(false);
   const [newName, setNewName] = useState(`${datasetName}-copy`);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,28 +35,25 @@ export default function ReprocessForm({ datasetName, dataSource, onStarted }: Pr
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetchConfigSchema(),
-      fetchDatasetConfig(datasetName),
-      fetchSteps(dataSource ?? "polycam"),
-    ])
-      .then(([sch, cfg, stepList]) => {
+    Promise.all([fetchConfigSchema(), fetchDatasetConfig(datasetName)])
+      .then(([sch, cfg]) => {
         setSchema(sch);
         setConfig(cfg);
-        setSteps(stepList);
-        if (stepList.length > 0) setStartFrom(stepList[0].name);
       })
       .catch((e) => setLoadError((e as Error).message));
-  }, [datasetName, dataSource]);
+  }, [datasetName]);
 
   const handleSubmit = async () => {
     if (!config) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // The step to continue from is set via the config form's "start_from_step".
+      const startFrom =
+        typeof config.start_from_step === "string" ? config.start_from_step : null;
       const { dataset_name, job_id } = await reprocessDataset(datasetName, {
         config,
-        start_from_step: startFrom || null,
+        start_from_step: startFrom,
         as_copy: asCopy,
         new_name: asCopy ? newName.trim() : undefined,
       });
@@ -98,22 +83,6 @@ export default function ReprocessForm({ datasetName, dataSource, onStarted }: Pr
       {config && schema && (
         <>
           <Paper variant="outlined" sx={{ p: 2.5, mb: 2 }}>
-            <FormControl size="small" fullWidth sx={{ mb: 2 }}>
-              <InputLabel id="start-from-label">Continue from step</InputLabel>
-              <Select
-                labelId="start-from-label"
-                label="Continue from step"
-                value={startFrom}
-                onChange={(e) => setStartFrom(e.target.value)}
-              >
-                {steps.map((s) => (
-                  <MenuItem key={s.name} value={s.name}>
-                    {humanize(s.name)} — {s.description}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
             <FormControlLabel
               control={
                 <Switch
