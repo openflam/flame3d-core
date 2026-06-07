@@ -48,12 +48,9 @@ export default function ReprocessForm({ datasetName, onStarted }: Props) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      // The step to continue from is set via the config form's "start_from_step".
-      const startFrom =
-        typeof config.start_from_step === "string" ? config.start_from_step : null;
+      // Which steps run is controlled by the config form's "steps_to_run".
       const { dataset_name, job_id } = await reprocessDataset(datasetName, {
         config,
-        start_from_step: startFrom,
         as_copy: asCopy,
         new_name: asCopy ? newName.trim() : undefined,
       });

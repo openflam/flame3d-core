@@ -1,7 +1,7 @@
 {
   "dataset_name": "ProjectStudioTemp",
   "data_source": "polycam",
-  "start_from_step": null,
+  "steps_to_run": null,
 
   "polycam": {
     "depth_tolerance": 1.0

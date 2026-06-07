@@ -175,7 +175,6 @@ export async function fetchDatasetConfig(name: string): Promise<Config> {
 
 export interface ReprocessRequest {
   config: Config;
-  start_from_step: string | null;
   as_copy: boolean;
   new_name?: string;
 }

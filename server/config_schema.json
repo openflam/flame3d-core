@@ -1,7 +1,7 @@
 {
   "data_source": { "type": "string", "possible_values": ["polycam"] },
-  "start_from_step": {
-    "type": "string",
+  "steps_to_run": {
+    "type": "array",
     "nullable": true,
     "possible_values": [
       "polycam_process",

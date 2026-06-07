@@ -51,7 +51,7 @@ def _prepare_inputs(
     preserved (the original — and thus their targets — still exists).
 
     Always (re)writes the on-disk ``master_config.json`` so the subprocess
-    pipeline steps read the exact parameters and ``start_from_step`` chosen for
+    pipeline steps read the exact parameters and ``steps_to_run`` chosen for
     this run.
     """
     from config_io import PATHS
@@ -91,17 +91,18 @@ def run_pipeline_task(
     data_source = config["data_source"]
     steps = get_pipeline_steps(data_source)
 
-    # Steps before ``start_from_step`` are reported as skipped.
-    start_from = config.get("start_from_step")
-    step_names = [s.name for s in steps]
-    skip_before = step_names.index(start_from) if start_from in step_names else 0
+    # Steps not in ``steps_to_run`` are reported as skipped. An empty/null
+    # ``steps_to_run`` means "run every step".
+    steps_to_run = config.get("steps_to_run")
+    selected = set(steps_to_run) if steps_to_run else None
 
     step_records: List[Dict[str, Any]] = []
-    for idx, step in enumerate(steps):
+    for step in steps:
+        will_run = selected is None or step.name in selected
         step_records.append({
             "name": step.name,
             "description": step.description,
-            "status": "skipped" if idx < skip_before else STATUS_PENDING,
+            "status": STATUS_PENDING if will_run else "skipped",
             "duration_seconds": None,
             "error": None,
         })

@@ -242,7 +242,7 @@ def process_data(
         Aggregated result with per-step timing and success information.
     """
     data_source_str = config["data_source"]
-    start_from_step = config.get("start_from_step")
+    steps_to_run = config.get("steps_to_run")
 
     # Resolve + validate the data source and its ordered step list.
     steps = get_pipeline_steps(data_source_str)
@@ -253,23 +253,24 @@ def process_data(
         data_source=data_source.value,
     )
 
-    # Optionally skip steps before start_from_step.
-    if start_from_step is not None:
+    # ``steps_to_run`` is an optional whitelist of step names. When it is empty
+    # or null, every step runs (the default). Otherwise only the listed steps
+    # run, in pipeline order — the caller is responsible for ensuring the inputs
+    # those steps need already exist.
+    if steps_to_run:
         step_names = [s.name for s in steps]
-        if start_from_step not in step_names:
+        unknown = [s for s in steps_to_run if s not in step_names]
+        if unknown:
             valid = ", ".join(step_names)
             raise ValueError(
-                f"Unknown step name: {start_from_step!r}. Valid steps: {valid}"
+                f"Unknown step name(s): {unknown}. Valid steps: {valid}"
             )
-        skip_idx = step_names.index(start_from_step)
-        skipped = steps[:skip_idx]
-        steps = steps[skip_idx:]
-        for skipped_step in skipped:
+        selected = set(steps_to_run)
+        for skipped_step in (s for s in steps if s.name not in selected):
             logger.info(
-                "Skipping step: %s (resuming from %s)",
-                skipped_step.name,
-                start_from_step,
+                "Skipping step: %s (not in steps_to_run)", skipped_step.name
             )
+        steps = [s for s in steps if s.name in selected]
 
     # Verify config_path is available if any subprocess steps remain.
     has_subprocess_steps = any(s.run_as_subprocess for s in steps)
@@ -384,7 +385,8 @@ examples:
   python -m server.utils.data_process --config server/default_config.json \\
       --dataset-name MyDataset
 
-To resume from a given step, set "start_from_step" in the config file.
+To run only specific steps, set "steps_to_run" (a list of step names) in the
+config file. Leave it null/empty to run every step.
 
 pipeline steps (polycam):
   {', '.join(_example_steps)}

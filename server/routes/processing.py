@@ -197,10 +197,10 @@ def reprocess_dataset(name: str):
     """Re-run the pipeline for *name* with (possibly) edited parameters.
 
     Body (JSON):
-      • ``config``           — the full master config to run with
-      • ``start_from_step``  — step name to resume from (optional)
-      • ``as_copy``          — if true, run on a fresh copy instead of in place
-      • ``new_name``         — name for the copy (required when ``as_copy``)
+      • ``config``     — the full master config to run with (its ``steps_to_run``
+                         controls which steps execute)
+      • ``as_copy``    — if true, run on a fresh copy instead of in place
+      • ``new_name``   — name for the copy (required when ``as_copy``)
 
     In-place re-runs reuse the dataset's existing data/ and outputs/.  Copies
     are cloned (by the worker) from the source dataset first, leaving the
@@ -212,7 +212,6 @@ def reprocess_dataset(name: str):
         return jsonify({"error": "Missing or invalid 'config'"}), 400
 
     config = dict(config)  # don't mutate the request payload
-    config["start_from_step"] = body.get("start_from_step") or None
 
     if body.get("as_copy"):
         new_name = (body.get("new_name") or "").strip()

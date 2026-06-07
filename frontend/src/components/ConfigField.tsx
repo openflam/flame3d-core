@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import FormHelperText from "@mui/material/FormHelperText";
 import InputLabel from "@mui/material/InputLabel";
+import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
@@ -50,7 +53,40 @@ export default function ConfigField({
 }: Props) {
   const label = humanize(fieldKey);
 
-  // Dropdown for enumerated fields.
+  // Multi-select for enumerated array fields (e.g. steps_to_run).
+  if (possibleValues && possibleValues.length > 0 && kind === "array") {
+    const selected: string[] = Array.isArray(value) ? value.map(String) : [];
+    return (
+      <FormControl size="small" fullWidth>
+        <InputLabel id={`${fieldKey}-label`}>{label}</InputLabel>
+        <Select
+          labelId={`${fieldKey}-label`}
+          label={label}
+          multiple
+          value={selected}
+          onChange={(e) => {
+            const v = e.target.value;
+            const arr = typeof v === "string" ? v.split(",") : v;
+            // An empty selection emits null when nullable (i.e. "use default").
+            onChange(arr.length === 0 && nullable ? null : arr);
+          }}
+          renderValue={(sel) =>
+            (sel as string[]).length === 0 ? "All" : (sel as string[]).join(", ")
+          }
+        >
+          {possibleValues.map((opt) => (
+            <MenuItem key={String(opt)} value={String(opt)}>
+              <Checkbox checked={selected.indexOf(String(opt)) > -1} />
+              <ListItemText primary={String(opt)} />
+            </MenuItem>
+          ))}
+        </Select>
+        <FormHelperText>Leave empty to run all</FormHelperText>
+      </FormControl>
+    );
+  }
+
+  // Dropdown for enumerated scalar fields.
   if (possibleValues && possibleValues.length > 0) {
     const selected = value === null || value === undefined ? NULL_OPTION : String(value);
     return (
