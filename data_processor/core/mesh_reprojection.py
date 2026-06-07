@@ -65,22 +65,92 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 import open3d as o3d
 from tqdm import tqdm
 
-from config_io import get_colmap_output_path
+from config_io import get_colmap_output_path, get_rendered_depth_output_path
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Public API
 # ═══════════════════════════════════════════════════════════════════════════
 
+def render_depth_from_mesh(
+    mesh: o3d.geometry.TriangleMesh,
+    width: int,
+    height: int,
+    extrinsics: np.ndarray,
+    intrinsics: np.ndarray,
+    scene: o3d.t.geometry.RaycastingScene | None = None,
+) -> np.ndarray:
+    """Render a z-depth map of *mesh* as seen from a given camera pose.
+
+    The returned depth map is pixel-wise aligned with an RGB image captured
+    with the same ``intrinsics`` and resolution: pixel ``(v, u)`` of the
+    output corresponds to pixel ``(v, u)`` of that image.  Depth is expressed
+    in metric units along the camera optical (Z) axis – the same convention
+    used by the ``"depth"`` entries of ``image_pose_depth`` – so it can be
+    used as a drop-in replacement for a captured depth map.
+
+    Parameters
+    ----------
+    mesh : open3d.geometry.TriangleMesh
+        Input 3D mesh (right-handed Z-up).
+    width, height : int
+        Output resolution in pixels (must match the RGB image).
+    extrinsics : numpy.ndarray, shape (4, 4)
+        Camera-to-world (c2w) transformation matrix.
+    intrinsics : numpy.ndarray, shape (3, 3)
+        Pinhole intrinsic matrix ``[[fx, 0, cx], [0, fy, cy], [0, 0, 1]]``.
+    scene : open3d.t.geometry.RaycastingScene, optional
+        A pre-built raycasting scene that already contains *mesh*.  Supply
+        this to avoid rebuilding the BVH when rendering many frames of the
+        same mesh.  If *None*, a scene is constructed from *mesh* on the fly.
+
+    Returns
+    -------
+    numpy.ndarray, shape (height, width), dtype float32
+        Z-depth map.  Pixels where no surface is hit are set to ``0``.
+    """
+    extrinsics = np.asarray(extrinsics, dtype=np.float64)
+    intrinsics = np.asarray(intrinsics, dtype=np.float64)
+
+    # Build the raycasting scene if the caller did not provide one.
+    if scene is None:
+        scene = o3d.t.geometry.RaycastingScene()
+        scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+
+    # Open3D expects the world-to-camera (extrinsic) matrix.
+    w2c = np.linalg.inv(extrinsics)
+
+    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
+        intrinsic_matrix=o3d.core.Tensor(intrinsics),
+        extrinsic_matrix=o3d.core.Tensor(w2c),
+        width_px=int(width),
+        height_px=int(height),
+    )
+
+    ans = scene.cast_rays(rays)
+    # ``create_rays_pinhole`` returns ray directions with a *unit z-component*
+    # along the camera optical axis (they are not unit-length).  The hit
+    # parameter ``t_hit`` is therefore already the depth along the optical
+    # (Z) axis – exactly the convention used by the captured depth maps – so
+    # no Euclidean-to-z conversion is needed.
+    depth = ans["t_hit"].numpy().astype(np.float32)  # (H, W)
+    # Rays that miss the mesh yield inf -> mark as invalid (0).
+    depth[~np.isfinite(depth)] = 0.0
+    return depth
+
+
 def mesh_reprojection(
     mesh: o3d.geometry.TriangleMesh,
     image_pose_depth: list[dict[str, Any]],
     depth_tolerance: float = 0.05,
     dataset_name: str = "default",
+    use_rendered_depth: bool = True,
+    save_rendered_depth: bool = True,
 ) -> dict[str, Any]:
     """Sample mesh vertices and project them into every image.
 
@@ -97,6 +167,15 @@ def mesh_reprojection(
         Relative depth tolerance for visibility checks (default 0.05).
     dataset_name : str, optional
         Name used for the output sub-directory (default ``"default"``).
+    use_rendered_depth : bool, optional
+        When *True* (default), the per-frame depth maps are rendered from
+        *mesh* via :func:`render_depth_from_mesh` instead of using the
+        ``"depth"`` entries of *image_pose_depth*; the passed-in depth is
+        then completely ignored.
+    save_rendered_depth : bool, optional
+        When *True* (default) and ``use_rendered_depth`` is also *True*, each
+        rendered depth map is written as a 16-bit PNG (millimetres) into
+        ``outputs/<dataset_name>/rendered_images/``.
 
     Returns
     -------
@@ -110,6 +189,16 @@ def mesh_reprojection(
 
     if num_points == 0:
         raise ValueError("Mesh has no vertices – nothing to project.")
+
+    # When rendering depth from the mesh, build the raycasting scene once and
+    # reuse it for every frame (avoids rebuilding the BVH per image).
+    render_scene = None
+    rendered_depth_dir = None
+    if use_rendered_depth:
+        render_scene = o3d.t.geometry.RaycastingScene()
+        render_scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+        if save_rendered_depth:
+            rendered_depth_dir = get_rendered_depth_output_path(dataset_name)
 
     print(f"Projecting {num_points} vertices onto {num_images} images "
           f"(depth_tolerance={depth_tolerance})")
@@ -130,9 +219,28 @@ def mesh_reprojection(
         image = frame["image"]
         extrinsics_c2w = np.asarray(frame["extrinsics"], dtype=np.float64)
         intrinsics = np.asarray(frame["intrinsics"], dtype=np.float64)
-        depth_map = np.asarray(frame["depth"], dtype=np.float32)
 
-        H, W = depth_map.shape[:2]
+        if use_rendered_depth:
+            # Ignore the captured depth entirely – render a pixel-aligned
+            # depth map from the mesh for this exact pose / resolution.
+            H, W = image.shape[:2]
+            depth_map = render_depth_from_mesh(
+                mesh=mesh,
+                width=W,
+                height=H,
+                extrinsics=extrinsics_c2w,
+                intrinsics=intrinsics,
+                scene=render_scene,
+            )
+            if rendered_depth_dir is not None:
+                # Save as a 16-bit PNG in millimetres (matches the captured
+                # depth convention, so it round-trips via the depth loaders).
+                stem = Path(frame.get("name", f"frame_{image_id:06d}")).stem
+                depth_mm = np.clip(depth_map * 1000.0, 0, 65535).astype(np.uint16)
+                cv2.imwrite(str(rendered_depth_dir / f"{stem}.png"), depth_mm)
+        else:
+            depth_map = np.asarray(frame["depth"], dtype=np.float32)
+            H, W = depth_map.shape[:2]
 
         # World-to-camera: invert the camera-to-world matrix.
         w2c = np.linalg.inv(extrinsics_c2w)

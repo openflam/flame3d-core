@@ -33,3 +33,10 @@ def get_colmap_output_path(dataset_name: str) -> Path:
 def get_images_output_path(dataset_name: str) -> Path:
     """Return ``outputs/<dataset_name>/images/``."""
     return get_output_path(dataset_name) / "images"
+
+
+def get_rendered_depth_output_path(dataset_name: str) -> Path:
+    """Return ``outputs/<dataset_name>/rendered_images/``, creating it if needed."""
+    rendered_dir = get_output_path(dataset_name) / "rendered_images"
+    rendered_dir.mkdir(parents=True, exist_ok=True)
+    return rendered_dir
