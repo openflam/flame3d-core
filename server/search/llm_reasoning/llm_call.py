@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import os
 from typing import Any, Callable
 
-from dotenv import load_dotenv
 import litellm
-
-load_dotenv()
 
 
 DEFAULT_MODEL = "gpt-5.4"
