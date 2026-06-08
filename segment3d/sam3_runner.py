@@ -223,6 +223,14 @@ def run_sam3(
     obj_level_masks_dir = outputs_dir / "object_level_masks"
     masks_base_dir = obj_level_masks_dir / "masks"
     images_base_dir = obj_level_masks_dir / "images"
+
+    # Clear any masks from a previous run so we start from a clean slate and
+    # don't append to stale output. Skipped when resuming, since resume relies
+    # on previously written masks still being present.
+    if not resume and obj_level_masks_dir.exists():
+        print(f"Removing existing masks at {obj_level_masks_dir}")
+        shutil.rmtree(obj_level_masks_dir, ignore_errors=True)
+
     masks_base_dir.mkdir(parents=True, exist_ok=True)
     if save_images:
         images_base_dir.mkdir(parents=True, exist_ok=True)
