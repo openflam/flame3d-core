@@ -7,7 +7,7 @@ import SearchBar from "./SearchBar";
 import Model3DViewer from "./Model3DViewer";
 import SearchResult from "./SearchResult";
 import SearchComponentList from "./SearchComponentList";
-import { queryStream, SEARCH_SERVER_URL } from "./query";
+import { query, queryStream, SEARCH_SERVER_URL } from "./query";
 import { worldToViewerBbox } from "./transforms";
 import type { BoundingBox, SearchQuery, Route } from "./types/global";
 
@@ -28,9 +28,9 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
   const [autoTagBBoxes, setAutoTagBBoxes] = useState<BoundingBox[]>([]);
   const [occupancyGrid, setOccupancyGrid] = useState<BoundingBox[]>([]);
   const [annotations, setAnnotations] = useState<string[]>([]);
-  const [searchResult, setSearchResult] = useState<string | string[] | undefined>(
-    undefined,
-  );
+  const [searchResult, setSearchResult] = useState<
+    string | string[] | undefined
+  >(undefined);
   const [thinking, setThinking] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [route, setRoute] = useState<Route>([]);
@@ -63,7 +63,11 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
       });
   }, []);
 
-  const handleSearch = async (searchQuery: SearchQuery, modelName?: string) => {
+  const handleSearch = async (
+    searchQuery: SearchQuery,
+    method: string,
+    modelName?: string,
+  ) => {
     setIsLoading(true);
     setSearchResult(undefined);
     setThinking(undefined);
@@ -82,12 +86,12 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
 
       const allCaptions = [
         ...dbComponents.map((c: any) => c.caption),
-        ...customBBoxes.map(() => "Custom Location")
+        ...customBBoxes.map(() => "Custom Location"),
       ];
 
       const allComponentIds = [
         ...dbComponents.map((c: any) => String(c.component_id)),
-        ...customBBoxes.map((_: any, i: number) => `custom_bbox_${i}`)
+        ...customBBoxes.map((_: any, i: number) => `custom_bbox_${i}`),
       ];
 
       const allColors = allBBoxes.map(
@@ -103,26 +107,32 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
 
     let currentThinking = "";
     try {
-      await queryStream(
-        searchQuery,
-        "Tools",
-        datasetName,
-        modelName,
-        undefined,
-        (event) => {
-          if (event.type === "thinking") {
-            currentThinking += event.content;
-            setThinking(currentThinking);
-          } else if (event.type === "result") {
-            handleResult(event.data);
-          } else if (event.type === "error") {
-            console.error("Stream error:", event.error);
-            setSearchResult(`Error: ${event.error}`);
-          }
-        },
-      );
+      if (method === "BM25") {
+        // BM25 is a one-shot keyword search; there is nothing to stream.
+        const result = await query(searchQuery, method, datasetName, modelName);
+        handleResult(result);
+      } else {
+        await queryStream(
+          searchQuery,
+          method,
+          datasetName,
+          modelName,
+          undefined,
+          (event) => {
+            if (event.type === "thinking") {
+              currentThinking += event.content;
+              setThinking(currentThinking);
+            } else if (event.type === "result") {
+              handleResult(event.data);
+            } else if (event.type === "error") {
+              console.error("Stream error:", event.error);
+              setSearchResult(`Error: ${event.error}`);
+            }
+          },
+        );
+      }
     } catch (e) {
-      console.error("Query stream failed:", e);
+      console.error("Search failed:", e);
       setSearchResult("Search failed due to a network or server error.");
     } finally {
       setIsLoading(false);
@@ -142,7 +152,9 @@ function QueryApp({ datasetName, onBack }: QueryAppProps) {
           >
             ← Back
           </button>
-          <span style={{ fontWeight: 600, fontSize: "0.8rem", color: "#6c757d" }}>
+          <span
+            style={{ fontWeight: 600, fontSize: "0.8rem", color: "#6c757d" }}
+          >
             {datasetName}
           </span>
         </div>

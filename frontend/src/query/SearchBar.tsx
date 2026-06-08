@@ -5,9 +5,9 @@ import {
   Form,
   ProgressBar,
 } from "react-bootstrap";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BoundingBox, SearchQuery } from "./types/global";
-import { downloadAllComponents } from "./query";
+import { downloadAllComponents, getProvidersList } from "./query";
 import { worldToViewerBbox } from "./transforms";
 
 // react-bootstrap's polymorphic Button can blow up TS's union inference
@@ -16,7 +16,11 @@ import { worldToViewerBbox } from "./transforms";
 const Btn = Button as React.ElementType;
 
 interface SearchBarProps {
-  onSearch: (searchQuery: SearchQuery, modelName?: string) => void;
+  onSearch: (
+    searchQuery: SearchQuery,
+    method: string,
+    modelName?: string,
+  ) => void;
   onAnnotationsDownloaded: (
     bboxes: BoundingBox[],
     annotations: string[],
@@ -39,9 +43,30 @@ function SearchBar({
 }: SearchBarProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [modelName, setModelName] = useState("");
+  const [providers, setProviders] = useState<string[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState("Tools");
   const [isDownloadingAnnotations, setIsDownloadingAnnotations] =
     useState(false);
   const [annotationsLoaded, setAnnotationsLoaded] = useState(false);
+
+  // The model name is only relevant to the tool-calling agent; BM25 is a
+  // one-shot keyword search with no model.
+  const showModelInput = selectedProvider !== "BM25";
+
+  useEffect(() => {
+    getProvidersList()
+      .then((list) => {
+        setProviders(list);
+        if (list.length > 0 && !list.includes(selectedProvider)) {
+          setSelectedProvider(list[0]);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load providers:", error);
+      });
+    // Only fetch once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDownloadAnnotations = async () => {
     setIsDownloadingAnnotations(true);
@@ -66,7 +91,7 @@ function SearchBar({
   const handleSearch = () => {
     if (searchTerm.trim()) {
       const searchQuery: SearchQuery = [{ type: "text", value: searchTerm }];
-      onSearch(searchQuery, modelName);
+      onSearch(searchQuery, selectedProvider, modelName);
     }
   };
 
@@ -79,12 +104,26 @@ function SearchBar({
   return (
     <>
       <InputGroup className="mb-3">
-        <FormControl
-          placeholder="Model (Default: gpt-5.4)"
-          value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          style={{ maxWidth: "200px" }}
-        />
+        <Form.Select
+          value={selectedProvider}
+          onChange={(e) => setSelectedProvider(e.target.value)}
+          style={{ width: "120px", flex: "0 0 auto" }}
+        >
+          {providers.map((provider) => (
+            <option key={provider} value={provider}>
+              {provider}
+            </option>
+          ))}
+        </Form.Select>
+
+        {showModelInput && (
+          <FormControl
+            placeholder="Model (Default: gpt-5.4)"
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+            style={{ maxWidth: "200px" }}
+          />
+        )}
 
         <FormControl
           placeholder="Ask..."
