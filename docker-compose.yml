@@ -17,7 +17,7 @@ services:
       - POSTGRES_PASSWORD=flame
       - POSTGRES_DB=flame3d
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgis_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,8 +31,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - "5672:5672" # AMQP
-      - "15672:15672" # management UI (http://localhost:15672, guest/guest)
+      - "127.0.0.1:5672:5672" # AMQP
+      - "127.0.0.1:15672:15672" # management UI (http://localhost:15672, guest/guest)
     environment:
       - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
@@ -47,7 +47,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
