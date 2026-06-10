@@ -19,7 +19,7 @@
   },
 
   "identify_objects": {
-    "identifier_type": { "type": "string", "possible_values": ["vllm", "openai"] },
+    "identifier_type": { "type": "string", "possible_values": ["vllm", "llmapi"] },
     "model": { "type": "string" },
     "device": { "type": "integer" },
     "max_frames": { "type": "integer", "nullable": true },

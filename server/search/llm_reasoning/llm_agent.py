@@ -9,10 +9,13 @@ import re
 import sys
 from typing import Any, Callable, Sequence
 
-from .llm_call import DEFAULT_MODEL, LLMCaller
+from utils.llm_call import LLMCaller
 from .tools import get_tools, get_tool_functions, get_thinking_texts
 
 from server.search.prompts.tools_prompt import get_tools_prompt
+
+
+DEFAULT_MODEL = "gpt-5.4"
 
 
 def call_tool(tool_name: str, arguments: str | dict[str, Any], dataset_name: str | None = None, tool_functions: dict[str, Callable] | None = None) -> dict[str, Any]:

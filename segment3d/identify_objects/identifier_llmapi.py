@@ -1,22 +1,18 @@
 """
-OpenAI API-based object identifier implementation.
+LLM API-based object identifier implementation.
+
+Uses the shared :class:`utils.llm_call.LLMCaller` (backed by LiteLLM) so any
+provider/model supported by LiteLLM can be used, with credentials resolved from
+the project-root ``.env``.
 """
 
 from __future__ import annotations
 
 import base64
-import os
 from pathlib import Path
 from typing import List, Optional
 
-# Load .env from the project root (scan-to-map/.env) if present
-try:
-    from dotenv import load_dotenv
-
-    _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-    load_dotenv(dotenv_path=_ENV_PATH)
-except ImportError:
-    pass  # python-dotenv not installed; rely on the environment directly
+from utils.llm_call import LLMCaller
 
 from ..prompts import IDENTIFY_COMPONENT_PROMPT
 from .identifier_base import IdentificationResult
@@ -38,10 +34,10 @@ def _encode_image_base64(image_path: Path) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-class OpenAIIdentifier:
+class LLMAPIIdentifier:
     """
-    Object identifier implementation using the OpenAI Chat Completions API
-    with vision support.
+    Object identifier implementation using an LLM API (via LiteLLM) with
+    vision support.
 
     For each frame, it sends the image along with IDENTIFY_COMPONENT_PROMPT
     and parses the comma-separated response into a list of objects.
@@ -52,40 +48,32 @@ class OpenAIIdentifier:
         model: str = "gpt-4o-mini",
         api_key: Optional[str] = None,
         max_tokens: int = 256,
-        temperature: float = 0.0,
         max_concurrent: int = 8,
     ):
         """
-        Initialize the OpenAI identifier.
+        Initialize the LLM API identifier.
 
         Args:
-            model: OpenAI model name (must support vision)
-            api_key: OpenAI API key. Falls back to the OPENAI_API_KEY
-                     environment variable if not provided.
+            model: Model name (must support vision). Any model routable by
+                   LiteLLM is accepted.
+            api_key: API key. If not provided, LiteLLM resolves credentials
+                     from the environment (loaded from the project-root .env).
             max_tokens: Maximum tokens to generate per response
-            temperature: Sampling temperature (0.0 for deterministic)
             max_concurrent: Maximum number of concurrent API requests
         """
-        from openai import OpenAI
-
-        resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not resolved_key:
-            raise ValueError(
-                "OpenAI API key must be provided via the `api_key` argument "
-                "or the OPENAI_API_KEY environment variable."
-            )
-
         self.model = model
-        self.max_tokens = max_tokens
-        self.temperature = temperature
         self.max_concurrent = max_concurrent
-        self.client = OpenAI(api_key=resolved_key)
+        self.caller = LLMCaller(
+            model=model,
+            api_key=api_key,
+            max_completion_tokens=max_tokens,
+        )
 
-        print(f"\nOpenAI identifier initialised (model={model})")
+        print(f"\nLLM API identifier initialised (model={model})")
 
     def _call_single(self, frame_name: str, image_path: Path) -> IdentificationResult:
         """
-        Call the OpenAI API for a single frame.
+        Call the LLM API for a single frame.
 
         Args:
             frame_name: Name/identifier of the frame
@@ -108,9 +96,8 @@ class OpenAIIdentifier:
         try:
             data_uri = _encode_image_base64(image_path)
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = self.caller.stream_chat(
+                input=[
                     {
                         "role": "user",
                         "content": [
@@ -125,11 +112,9 @@ class OpenAIIdentifier:
                         ],
                     }
                 ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
             )
 
-            raw_text = response.choices[0].message.content.strip()
+            raw_text = (response.get("content") or "").strip()
             objects = self._parse_objects(raw_text)
 
             return IdentificationResult(
@@ -168,7 +153,7 @@ class OpenAIIdentifier:
         batch_data: List[tuple[str, Path]],
     ) -> List[IdentificationResult]:
         """
-        Identify objects in a batch of frames by calling the OpenAI API
+        Identify objects in a batch of frames by calling the LLM API
         concurrently (up to ``max_concurrent`` requests in flight at once).
 
         Args:
@@ -203,5 +188,5 @@ class OpenAIIdentifier:
         return results
 
     def cleanup(self) -> None:
-        """No-op: the OpenAI client holds no persistent resources."""
+        """No-op: the LLM API client holds no persistent resources."""
         pass

@@ -2,9 +2,10 @@ numpy>=1.24
 opencv-python>=4.8
 open3d>=0.17
 
+# LLM API access (via LiteLLM) — used by utils/llm_call.py
+litellm
+
 # segment3d/identify_objects dependencies
-openai
-python-dotenv
 transformers
 vllm
 Pillow

@@ -76,12 +76,12 @@ def create_identifier(
         from .identifier_vllm import VLLMIdentifier
 
         return VLLMIdentifier(model=model, device=device, **kwargs)
-    elif identifier_type == "openai":
-        from .identifier_openai import OpenAIIdentifier
+    elif identifier_type == "llmapi":
+        from .identifier_llmapi import LLMAPIIdentifier
 
-        return OpenAIIdentifier(model=model, **kwargs)
+        return LLMAPIIdentifier(model=model, **kwargs)
     else:
         raise ValueError(
             f"Unknown identifier type: {identifier_type}. "
-            f"Supported types: vllm, openai"
+            f"Supported types: vllm, llmapi"
         )

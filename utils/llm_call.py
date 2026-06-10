@@ -7,9 +7,6 @@ from typing import Any, Callable
 import litellm
 
 
-DEFAULT_MODEL = "gpt-5.4"
-
-
 class OutputItem:
     """Mock output item to maintain compatibility with legacy code expecting response items."""
     def __init__(self, type_: str, name: str, arguments: str, call_id: str):
@@ -24,7 +21,7 @@ class LLMCaller:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str,
         api_key: str | None = None,
         max_completion_tokens: int = 2000,
     ) -> None:
