@@ -1,15 +1,15 @@
 {
-  "dataset_name": "ProjectStudioTemp",
+  "dataset_name": "SampleProject",
   "data_source": "polycam",
   "steps_to_run": null,
 
   "polycam": {
-    "depth_tolerance": 1.0
+    "depth_tolerance": 0.0001
   },
 
   "identify_objects": {
-    "identifier_type": "vllm",
-    "model": "Qwen/Qwen3-VL-8B-Instruct",
+    "identifier_type": "llmapi",
+    "model": "gpt-4o-mini",
     "device": 0,
     "max_frames": null,
     "batch_size": 32
@@ -55,11 +55,11 @@
     "clip_distance_threshold": 0.3,
     "save_segment_images": true,
     "min_points": 1,
-    "min_points_in_3d_segment": 10,
+    "min_points_in_3d_segment": 5,
 
-    "component_dbscan_eps": 0.5,
+    "component_dbscan_eps": 0.2,
     "component_dbscan_min_samples": 5,
-    "component_dbscan_min_points": 20,
+    "component_dbscan_min_points": 5,
     "split_components": true,
 
     "percentile": 95.0,
