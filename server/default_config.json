@@ -12,7 +12,8 @@
     "model": "gpt-4o-mini",
     "device": 0,
     "max_frames": null,
-    "batch_size": 32
+    "batch_size": 32,
+    "skip_processed_frames": true
   },
 
   "normalize_labels": {

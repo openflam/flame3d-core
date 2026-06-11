@@ -23,7 +23,8 @@
     "model": { "type": "string" },
     "device": { "type": "integer" },
     "max_frames": { "type": "integer", "nullable": true },
-    "batch_size": { "type": "integer" }
+    "batch_size": { "type": "integer" },
+    "skip_processed_frames": { "type": "boolean" }
   },
 
   "normalize_labels": {
