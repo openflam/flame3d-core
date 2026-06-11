@@ -7,6 +7,7 @@ from typing import Any, Callable
 import litellm
 
 from utils.rate_limiter import get_rate_limiter
+from utils.token_estimator import estimate_prompt_tokens
 
 
 class OutputItem:
@@ -77,11 +78,7 @@ class LLMCaller:
 
         # Estimate the tokens this call will consume (prompt + reserved
         # completion) so the scheduler can enforce a tokens-per-minute budget.
-        try:
-            prompt_tokens = litellm.token_counter(model=self.model, messages=input)
-        except Exception:
-            prompt_tokens = 0
-        est_tokens = prompt_tokens + self.max_completion_tokens
+        est_tokens = estimate_prompt_tokens(self.model, input) + self.max_completion_tokens
 
         # Block until the scheduler grants a slot for this model, keeping
         # concurrent callers within the configured requests- and tokens-per-minute
