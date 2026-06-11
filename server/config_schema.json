@@ -14,6 +14,21 @@
     ]
   },
 
+  "rate_limits": {
+    "default": {
+      "requests_per_minute": { "type": "integer" },
+      "tokens_per_minute": { "type": "integer" }
+    },
+    "gpt-4o-mini": {
+      "requests_per_minute": { "type": "integer" },
+      "tokens_per_minute": { "type": "integer" }
+    },
+    "gpt-5.4": {
+      "requests_per_minute": { "type": "integer" },
+      "tokens_per_minute": { "type": "integer" }
+    }
+  },
+
   "polycam": {
     "depth_tolerance": { "type": "number" }
   },

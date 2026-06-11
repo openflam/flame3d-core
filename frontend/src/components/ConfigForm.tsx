@@ -71,6 +71,38 @@ export default function ConfigForm({ schema, config, onChange }: Props) {
     );
   };
 
+  /**
+   * Render a schema node: a leaf becomes a field; a nested object becomes a
+   * labelled sub-group spanning the full grid width. Recursion lets sections
+   * nest to any depth (e.g. `rate_limits` → per-model → RPM/TPM fields).
+   */
+  const renderNode = (path: string[], key: string, node: ConfigSchema[string]) => {
+    if (isSchemaLeaf(node)) {
+      return renderLeaf(path, key, node as ConfigSchemaLeaf);
+    }
+    const childKeys = Object.keys(node as ConfigSchema);
+    return (
+      <Box key={path.join(".")} sx={{ gridColumn: "1 / -1" }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          {humanize(key)}
+        </Typography>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+            gap: 2,
+            alignItems: "center",
+            pl: 1.5,
+          }}
+        >
+          {childKeys.map((k) =>
+            renderNode([...path, k], k, (node as ConfigSchema)[k]),
+          )}
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <Box>
       <Paper variant="outlined" sx={{ p: 2.5, mb: 2 }}>
@@ -113,7 +145,7 @@ export default function ConfigForm({ schema, config, onChange }: Props) {
                 }}
               >
                 {keys.map((k) =>
-                  renderLeaf([section, k], k, sectionSchema[k] as ConfigSchemaLeaf),
+                  renderNode([section, k], k, sectionSchema[k]),
                 )}
               </Box>
             </AccordionDetails>

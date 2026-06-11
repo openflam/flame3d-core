@@ -114,6 +114,42 @@ per pipeline step**. A field's `type` is one of `string`, `number`, `integer`,
 
 ---
 
+## `rate_limits` — LLM API request throttling
+
+Per-model **requests-per-minute (RPM)** and **tokens-per-minute (TPM)** budgets
+enforced by `utils/rate_limiter.py` before every `utils/llm_call.py` API call.
+The limiter is a Redis-backed pair of token buckets sharing the compose `redis`
+service, so the caps hold **across all threads, processes, and containers** —
+this is what keeps the concurrent object identifier
+(`segment3d/identify_objects/orchestrator.py`) from tripping provider rate
+limits.
+
+Keys are model names, each mapping to an object with `requests_per_minute`
+and/or `tokens_per_minute`. The `default` entry applies to any model not listed
+explicitly. A model with no matching entry (and no `default`) is **unlimited**;
+omitting one of the two fields leaves that dimension unlimited; and if Redis is
+unreachable the limiter fails open (never blocks the pipeline).
+
+```json
+"rate_limits": {
+  "default":     { "requests_per_minute": 60,  "tokens_per_minute": 100000 },
+  "gpt-4o-mini": { "requests_per_minute": 200, "tokens_per_minute": 400000 }
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `<model>.requests_per_minute` | integer | Max API calls per minute for the model. |
+| `<model>.tokens_per_minute` | integer | Max tokens per minute (estimated prompt tokens + reserved `max_completion_tokens`). |
+
+> Each bucket allows a burst of up to one minute's worth of budget (capacity =
+> the per-minute limit), then refills at `limit / 60` per second. The token
+> estimate comes from `litellm.token_counter` plus the reserved completion
+> tokens. Override the Redis target with `LLM_RATE_LIMIT_REDIS_URL` (defaults to
+> the Celery result backend).
+
+---
+
 ## `polycam` — Polycam data processing
 
 Extracts and processes a Polycam raw-data export and writes COLMAP files.

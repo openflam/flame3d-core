@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 import litellm
 
+from utils.rate_limiter import get_rate_limiter
+
 
 class OutputItem:
     """Mock output item to maintain compatibility with legacy code expecting response items."""
@@ -24,10 +26,14 @@ class LLMCaller:
         model: str,
         api_key: str | None = None,
         max_completion_tokens: int = 2000,
+        rate_limits: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.max_completion_tokens = max_completion_tokens
         self.api_key = api_key
+        # Shared, Redis-backed scheduler. `rate_limits` is optional: when None
+        # the limiter resolves per-model RPM limits from the active config.
+        self._rate_limiter = get_rate_limiter(rate_limits)
 
     def stream_chat(
         self,
@@ -68,6 +74,19 @@ class LLMCaller:
         content_parts: list[str] = []
         # Track function calls being streamed: index -> dict of tool call data
         tool_calls_dict: dict[int, dict[str, Any]] = {}
+
+        # Estimate the tokens this call will consume (prompt + reserved
+        # completion) so the scheduler can enforce a tokens-per-minute budget.
+        try:
+            prompt_tokens = litellm.token_counter(model=self.model, messages=input)
+        except Exception:
+            prompt_tokens = 0
+        est_tokens = prompt_tokens + self.max_completion_tokens
+
+        # Block until the scheduler grants a slot for this model, keeping
+        # concurrent callers within the configured requests- and tokens-per-minute
+        # budgets.
+        self._rate_limiter.acquire(self.model, est_tokens=est_tokens)
 
         stream = litellm.completion(**request)
         for chunk in stream:
