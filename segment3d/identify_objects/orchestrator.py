@@ -94,6 +94,7 @@ def identify_all_frames_cli(
     max_frames: Optional[int] = None,
     batch_size: int = 32,
     skip_processed_frames: bool = True,
+    rate_limits: Optional[Dict] = None,
     **identifier_kwargs,
 ) -> None:
     """
@@ -119,6 +120,8 @@ def identify_all_frames_cli(
         skip_processed_frames: If True (default), frames that already have a
             saved checkpoint are skipped (resume support). If False, every
             frame is recomputed and its checkpoint overwritten.
+        rate_limits: Per-model RPM/TPM limits passed to the LLM API identifier's
+            scheduler (None disables limiting). Ignored by the vLLM identifier.
         **identifier_kwargs: Additional arguments to pass to the identifier
     """
 
@@ -148,7 +151,9 @@ def identify_all_frames_cli(
     total_discovered = len(all_frames)
     if max_frames is not None:
         all_frames = all_frames[:max_frames]
-        print(f"\nLimiting to {len(all_frames)} frames (out of {total_discovered} total)")
+        print(
+            f"\nLimiting to {len(all_frames)} frames (out of {total_discovered} total)"
+        )
     else:
         print(f"\nFound {len(all_frames)} frames to process")
 
@@ -182,6 +187,7 @@ def identify_all_frames_cli(
             identifier_type=identifier_type,
             model=model,
             device=device,
+            rate_limits=rate_limits,
             **identifier_kwargs,
         )
 
@@ -239,7 +245,8 @@ def identify_all_frames_cli(
         per_frame_objects[frame_name] = objects if objects is not None else []
 
     total_processed = sum(
-        1 for frame_name, _ in all_frames
+        1
+        for frame_name, _ in all_frames
         if _frame_result_path(frames_dir, frame_name).exists()
     )
 
@@ -253,7 +260,7 @@ def identify_all_frames_cli(
     avg_objects = sum(object_counts) / len(object_counts) if object_counts else 0.0
     min_objects = min(object_counts) if object_counts else 0
     max_objects = max(object_counts) if object_counts else 0
-    
+
     step_stats = {
         "duration_seconds": total_runtime,
         "status": "completed",
@@ -267,10 +274,10 @@ def identify_all_frames_cli(
             "avg_objects_per_frame": avg_objects,
             "min_objects_per_frame": min_objects,
             "max_objects_per_frame": max_objects,
-        }
+        },
     }
     save_runtime_stats(dataset_name, "identify_frames", step_stats)
-    
+
     stats_path = outputs_dir / "runtime_stats.json"
 
     print(f"\n{'='*60}")
@@ -306,6 +313,7 @@ def identify_all_frames_from_config(config: dict, dataset_name: str) -> None:
         max_frames=io_cfg.get("max_frames"),
         batch_size=io_cfg.get("batch_size", 32),
         skip_processed_frames=io_cfg.get("skip_processed_frames", True),
+        rate_limits=config.get("rate_limits"),
     )
 
 

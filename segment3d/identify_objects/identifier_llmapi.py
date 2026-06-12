@@ -49,6 +49,7 @@ class LLMAPIIdentifier:
         api_key: Optional[str] = None,
         max_tokens: int = 256,
         max_concurrent: int = 8,
+        rate_limits: Optional[dict] = None,
     ):
         """
         Initialize the LLM API identifier.
@@ -60,6 +61,11 @@ class LLMAPIIdentifier:
                      from the environment (loaded from the project-root .env).
             max_tokens: Maximum tokens to generate per response
             max_concurrent: Maximum number of concurrent API requests
+            rate_limits: Per-model RPM/TPM limits from the run config, handed to
+                     the shared scheduler so this model is throttled. None means
+                     no limiting. This step fans out across ``max_concurrent``
+                     threads, so throttling here is what keeps it under provider
+                     limits.
         """
         self.model = model
         self.max_concurrent = max_concurrent
@@ -67,6 +73,7 @@ class LLMAPIIdentifier:
             model=model,
             api_key=api_key,
             max_completion_tokens=max_tokens,
+            rate_limits=rate_limits,
         )
 
         print(f"\nLLM API identifier initialised (model={model})")

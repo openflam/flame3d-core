@@ -55,6 +55,7 @@ def create_identifier(
     identifier_type: str,
     model: str,
     device: int = 0,
+    rate_limits: dict | None = None,
     **kwargs,
 ) -> Identifier:
     """
@@ -64,6 +65,8 @@ def create_identifier(
         identifier_type: Type of identifier to create (e.g., "vllm")
         model: Model name/identifier
         device: GPU device ID to use
+        rate_limits: Per-model RPM/TPM limits (only meaningful for the API
+            identifier; the local vLLM identifier ignores it).
         **kwargs: Additional identifier-specific arguments
 
     Returns:
@@ -79,7 +82,7 @@ def create_identifier(
     elif identifier_type == "llmapi":
         from .identifier_llmapi import LLMAPIIdentifier
 
-        return LLMAPIIdentifier(model=model, **kwargs)
+        return LLMAPIIdentifier(model=model, rate_limits=rate_limits, **kwargs)
     else:
         raise ValueError(
             f"Unknown identifier type: {identifier_type}. "

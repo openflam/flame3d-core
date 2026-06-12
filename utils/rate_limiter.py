@@ -25,21 +25,19 @@ not listed explicitly::
       "gpt-4o-mini": { "requests_per_minute": 200, "tokens_per_minute": 400000 }
     }
 
-Either field may be omitted to leave that dimension unlimited. The limiter
-resolves its config from (in order): an explicit dict passed by the caller, the
-JSON config at ``$FLAME3D_CONFIG_PATH``, or the shipped
-``server/default_config.json``. If Redis is unreachable or a model has no
-configured limit, the limiter **fails open** (it never blocks the pipeline on
+Either field may be omitted to leave that dimension unlimited. The caller passes
+the ``rate_limits`` dict explicitly; when it is ``None`` the limiter is a
+**transparent passthrough** that always allows (no limiting, and no Redis
+connection is opened). If Redis is unreachable or a model has no configured
+limit, the limiter **fails open** (it never blocks the pipeline on
 infrastructure problems).
 """
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 # Atomic dual token-bucket step, evaluated server-side in Redis so concurrent
@@ -117,36 +115,6 @@ _KEY_PREFIX = "flame3d:llm_ratelimit:"
 _MAX_SLEEP_SECONDS = 2.0
 
 
-def _repo_root() -> Path:
-    """Repo root, i.e. the parent of the ``utils`` package directory."""
-    return Path(__file__).resolve().parents[1]
-
-
-def _load_rate_limits_from_config() -> Dict[str, Any]:
-    """Load the ``rate_limits`` mapping from the active JSON config.
-
-    Looks at ``$FLAME3D_CONFIG_PATH`` first, then the shipped
-    ``server/default_config.json``. Any error yields an empty mapping (the
-    limiter then fails open for every model).
-    """
-    candidates = []
-    env_path = os.environ.get("FLAME3D_CONFIG_PATH")
-    if env_path:
-        candidates.append(Path(env_path))
-    candidates.append(_repo_root() / "server" / "default_config.json")
-
-    for path in candidates:
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                config = json.load(f)
-            limits = config.get("rate_limits")
-            if isinstance(limits, dict):
-                return limits
-        except (OSError, json.JSONDecodeError):
-            continue
-    return {}
-
-
 def _redis_url() -> str:
     """Resolve the Redis URL, reusing the Celery result backend by default."""
     return (
@@ -173,20 +141,25 @@ class RateLimiter:
         rate_limits: Optional[Dict[str, Any]] = None,
         redis_url: Optional[str] = None,
     ) -> None:
-        self._rate_limits: Dict[str, Any] = (
-            rate_limits if rate_limits is not None else _load_rate_limits_from_config()
-        )
+        # None (or empty) => no limits configured => transparent passthrough.
+        self._rate_limits: Optional[Dict[str, Any]] = rate_limits
         self._redis_url = redis_url or _redis_url()
         self._lock = threading.Lock()
         self._redis = None
         self._script = None
         self._redis_failed = False
-        self._connect()
+        # Only touch Redis when there's actually something to enforce.
+        if self._rate_limits:
+            self._connect()
 
-    def set_rate_limits(self, rate_limits: Dict[str, Any]) -> None:
-        """Replace the in-memory limit table (e.g. when a caller passes its own)."""
-        if rate_limits is not None:
-            self._rate_limits = rate_limits
+    def set_rate_limits(self, rate_limits: Optional[Dict[str, Any]]) -> None:
+        """Replace the in-memory limit table (e.g. when a caller passes its own).
+
+        Connects to Redis lazily if limits are now set but weren't before.
+        """
+        self._rate_limits = rate_limits
+        if self._rate_limits and self._redis is None and not self._redis_failed:
+            self._connect()
 
     def _connect(self) -> None:
         """Open the Redis connection once. Failures switch the limiter to no-op."""
@@ -230,8 +203,12 @@ class RateLimiter:
             est_tokens: estimated tokens this request will consume (prompt +
                 reserved completion). Only used for the TPM bucket.
 
-        No-op when the model has no configured limit or Redis is unreachable.
+        No-op when no limits are configured (``rate_limits`` was None), the
+        model has no configured limit, or Redis is unreachable.
         """
+        if not self._rate_limits:
+            return  # transparent passthrough: no limiting configured
+
         rpm, tpm = self._limits_for(model)
         if (rpm is None and tpm is None) or self._redis is None or self._script is None:
             return
