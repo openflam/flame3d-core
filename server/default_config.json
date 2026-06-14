@@ -38,6 +38,7 @@
     "objects_filter": null,
     "resume": false,
     "objects_to_frames_path": null,
+    "objects_to_segment": null,
     "tmp_root": null,
     "save_images": false
   },

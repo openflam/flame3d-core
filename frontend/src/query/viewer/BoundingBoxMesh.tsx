@@ -23,9 +23,11 @@ export default function BoundingBoxMesh({
   isDimmed = false,
 }: BoundingBoxMeshProps) {
   const { corners } = bbox;
+  const hasCorners = Array.isArray(corners) && corners.length >= 8;
 
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
+    if (!hasCorners) return geo;
     const vertices = new Float32Array(24);
     for (let i = 0; i < 8; i++) {
       vertices[i * 3] = corners[i][0];
@@ -51,6 +53,7 @@ export default function BoundingBoxMesh({
 
   // prettier-ignore
   const center = useMemo(() => {
+    if (!hasCorners) return [0, 0, 0];
     let cx = 0, cy = 0, cz = 0;
     for (let i = 0; i < 8; i++) {
         cx += corners[i][0];
@@ -58,10 +61,17 @@ export default function BoundingBoxMesh({
         cz += corners[i][2];
     }
     return [cx / 8, cy / 8, cz / 8];
-  }, [corners]);
+  }, [corners, hasCorners]);
 
   // Find max Y for label
-  const maxY = useMemo(() => Math.max(...corners.map((c) => c[1])), [corners]);
+  const maxY = useMemo(
+    () => (hasCorners ? Math.max(...corners.map((c) => c[1])) : 0),
+    [corners, hasCorners],
+  );
+
+  // A component with no (or an incomplete) bounding box has nothing to draw.
+  // Skip it rather than rendering a degenerate mesh — and never crash the canvas.
+  if (!hasCorners) return null;
 
   const finalOpacity = isDimmed ? 0.05 : isSelected ? 0.6 : opacity;
   const finalColor = color;

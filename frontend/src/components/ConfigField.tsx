@@ -139,40 +139,44 @@ export default function ConfigField({
     return String(v);
   };
 
+  // Parse a raw text buffer into the JSON value its contents represent.
+  const parse = (raw: string): ConfigValue => {
+    const trimmed = raw.trim();
+    if (kind === "array") {
+      return trimmed === ""
+        ? nullable
+          ? null
+          : []
+        : trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    if (trimmed === "") {
+      // Empty fields collapse to null when nullable; otherwise to "" (strings)
+      // or null (numbers, which have no sensible empty value).
+      return nullable || kind === "number" ? null : "";
+    }
+    if (kind === "number") {
+      const n = Number(trimmed);
+      return Number.isNaN(n) ? value : n;
+    }
+    return raw;
+  };
+
   const [buffer, setBuffer] = useState<string>(toBuffer(value));
 
   // Keep the buffer in sync if the value is reset externally (e.g. "Reset
-  // defaults").
+  // defaults"). Skip when the buffer already represents `value` — otherwise
+  // every keystroke (which round-trips through `onChange`) would clobber
+  // in-progress text such as a trailing "," or ", " in array fields.
   useEffect(() => {
-    setBuffer(toBuffer(value));
+    if (JSON.stringify(parse(buffer)) !== JSON.stringify(value)) {
+      setBuffer(toBuffer(value));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const emit = (raw: string) => {
     setBuffer(raw);
-    const trimmed = raw.trim();
-    if (kind === "array") {
-      onChange(
-        trimmed === ""
-          ? nullable
-            ? null
-            : []
-          : trimmed.split(",").map((s) => s.trim()).filter(Boolean),
-      );
-      return;
-    }
-    if (trimmed === "") {
-      // Empty fields collapse to null when nullable; otherwise to "" (strings)
-      // or null (numbers, which have no sensible empty value).
-      onChange(nullable || kind === "number" ? null : "");
-      return;
-    }
-    if (kind === "number") {
-      const n = Number(trimmed);
-      onChange(Number.isNaN(n) ? value : n);
-      return;
-    }
-    onChange(raw);
+    onChange(parse(raw));
   };
 
   return (

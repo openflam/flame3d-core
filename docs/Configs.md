@@ -201,7 +201,8 @@ Runs the SAM3 video predictor on per-object frame sequences.
 | --- | --- | --- | --- |
 | `objects_filter` | array (nullable) | `null` | If set, process only these object names (case-insensitive). `null` processes all objects. |
 | `resume` | boolean | `false` | Skip `(object, sequence)` pairs whose output directory already contains `.npz` files. |
-| `objects_to_frames_path` | string (nullable) | `null` | Override path to `objects_to_frames.json`. `null` uses the default location under the outputs dir. |
+| `objects_to_frames_path` | string (nullable) | `null` | Override path to `objects_to_frames.json`. `null` uses the default location under the outputs dir. Ignored when `objects_to_segment` is set. |
+| `objects_to_segment` | array (nullable) | `null` | If set, **ignore** the stored `objects_to_frames.json` (which need not exist) and build a synthetic mapping that segments each listed object across **every** frame in the COLMAP model. `null` falls back to the stored `objects_to_frames.json`. |
 | `tmp_root` | string (nullable) | `null` | Directory in which temporary JPEG folders are created. `null` uses the system default. |
 | `save_images` | boolean | `false` | Also save overlay JPEGs of each mask rendered on top of the original frame. |
 

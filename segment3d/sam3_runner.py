@@ -46,7 +46,12 @@ from pycocotools import mask as mask_utils
 from sam3.model_builder import build_sam3_video_predictor
 from sam3.visualization_utils import load_frame, render_masklet_frame
 
-from config_io import get_images_output_path, get_output_path
+from config_io import (
+    get_colmap_output_path,
+    get_images_output_path,
+    get_output_path,
+)
+from segment3d.utils.colmap_io import load_colmap_model
 from segment3d.utils.save_runtime_stats import save_runtime_stats
 
 
@@ -89,6 +94,36 @@ def _build_temp_jpeg_dir(
         dst = tmp_dir / f"{idx}.jpg"
         dst.symlink_to(src)
     return tmp_dir, list(frame_names)
+
+
+def _all_colmap_frame_stems(dataset_name: str) -> List[str]:
+    """Return the filename stems of every image in the COLMAP model, sorted.
+
+    COLMAP image names carry their extension (e.g. ``frame_00001.jpg``) but the
+    rest of the pipeline addresses frames by stem (e.g. ``frame_00001``), so we
+    strip the extension here.
+    """
+    colmap_dir = get_colmap_output_path(dataset_name)
+    _, images, _ = load_colmap_model(str(colmap_dir))
+    stems = {Path(image.name).stem for image in images.values()}
+    return sorted(stems)
+
+
+def _synthetic_objects_to_frames(
+    objects_to_segment: List[str], dataset_name: str
+) -> Dict[str, List[List[str]]]:
+    """Build an in-memory objects_to_frames mapping.
+
+    Every requested object is mapped to a single sequence containing all frames
+    in the COLMAP model. Used when ``objects_to_segment`` is supplied instead of
+    reading a stored ``objects_to_frames.json``.
+    """
+    all_frames = _all_colmap_frame_stems(dataset_name)
+    if not all_frames:
+        raise ValueError(
+            f"No frames found in the COLMAP model for dataset {dataset_name!r}"
+        )
+    return {obj: [all_frames] for obj in objects_to_segment}
 
 
 def _propagate_in_video(predictor: Any, session_id: str) -> Dict[int, Any]:
@@ -200,6 +235,7 @@ def run_sam3(
     objects_filter: Optional[List[str]] = None,
     resume: bool = False,
     objects_to_frames_path: Optional[Path] = None,
+    objects_to_segment: Optional[List[str]] = None,
     tmp_root: Optional[Path] = None,
     save_images: bool = False,
 ) -> None:
@@ -211,6 +247,10 @@ def run_sam3(
         objects_filter:         if given, only process these object names
         resume:                 skip (object, seq) pairs whose output already exists
         objects_to_frames_path: override path to objects_to_frames.json
+        objects_to_segment:     if given, ignore the stored objects_to_frames.json
+                                (which need not exist) and instead build a synthetic
+                                mapping where each of these objects is segmented
+                                across every frame in the COLMAP model
         tmp_root:               directory in which to create temp JPEG folders;
                                 defaults to the system temp dir
         save_images:            if True, also save overlay JPEG visualizations
@@ -235,18 +275,31 @@ def run_sam3(
     if save_images:
         images_base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Locate objects_to_frames.json
-    if objects_to_frames_path is None:
-        objects_to_frames_path = (
-            outputs_dir / "objects_inventory" / "objects_to_frames.json"
+    # Build the objects_to_frames mapping. When objects_to_segment is provided we
+    # ignore any stored objects_to_frames.json (it need not exist) and instead
+    # segment each requested object across every frame in the COLMAP model.
+    if objects_to_segment:
+        print(
+            f"Building synthetic objects_to_frames for {len(objects_to_segment)} "
+            f"object(s) across all COLMAP frames."
         )
-    if not objects_to_frames_path.is_file():
-        raise FileNotFoundError(
-            f"objects_to_frames.json not found at {objects_to_frames_path}"
+        objects_to_frames: Dict[str, List[List[str]]] = _synthetic_objects_to_frames(
+            objects_to_segment, dataset_name
         )
+        objects_to_frames_path = None
+    else:
+        # Locate objects_to_frames.json
+        if objects_to_frames_path is None:
+            objects_to_frames_path = (
+                outputs_dir / "objects_inventory" / "objects_to_frames.json"
+            )
+        if not objects_to_frames_path.is_file():
+            raise FileNotFoundError(
+                f"objects_to_frames.json not found at {objects_to_frames_path}"
+            )
 
-    with objects_to_frames_path.open("r", encoding="utf-8") as fh:
-        objects_to_frames: Dict[str, List[List[str]]] = json.load(fh)
+        with objects_to_frames_path.open("r", encoding="utf-8") as fh:
+            objects_to_frames = json.load(fh)
 
     # Optional filtering
     if objects_filter:
@@ -421,6 +474,7 @@ def run_sam3(
             "objects_filter": objects_filter,
             "resume": resume,
             "objects_to_frames_path": str(objects_to_frames_path) if objects_to_frames_path else None,
+            "objects_to_segment": objects_to_segment,
             "tmp_root": str(tmp_root) if tmp_root else None,
             "save_images": save_images,
         }
@@ -450,6 +504,7 @@ def run_sam3_from_config(config: dict, dataset_name: str) -> None:
         objects_filter=sam_cfg.get("objects_filter"),
         resume=sam_cfg.get("resume", False),
         objects_to_frames_path=Path(objects_json) if objects_json else None,
+        objects_to_segment=sam_cfg.get("objects_to_segment"),
         tmp_root=Path(tmp_root_str) if tmp_root_str else None,
         save_images=sam_cfg.get("save_images", False),
     )

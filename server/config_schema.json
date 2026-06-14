@@ -58,6 +58,7 @@
     "objects_filter": { "type": "array", "nullable": true },
     "resume": { "type": "boolean" },
     "objects_to_frames_path": { "type": "string", "nullable": true },
+    "objects_to_segment": { "type": "array", "nullable": true },
     "tmp_root": { "type": "string", "nullable": true },
     "save_images": { "type": "boolean" }
   },

@@ -72,11 +72,18 @@ function SearchBar({
     setIsDownloadingAnnotations(true);
     try {
       const data = await downloadAllComponents(datasetName);
+      // Drop components without a complete (8-corner) bbox — the server returns
+      // an empty bbox ({}) for components that never got one, and those can't be
+      // drawn. Filtering here keeps the bboxes/annotations arrays index-aligned.
+      const withBbox = data.filter(
+        (item: any) =>
+          Array.isArray(item.bbox?.corners) && item.bbox.corners.length >= 8,
+      );
       // Components come from the server in the world (Z-up) frame.
-      const bboxes: BoundingBox[] = data.map((item: any) =>
+      const bboxes: BoundingBox[] = withBbox.map((item: any) =>
         worldToViewerBbox(item.bbox),
       );
-      const annotationList: string[] = data.map((item) =>
+      const annotationList: string[] = withBbox.map((item) =>
         item.connected_comp_id.toString(),
       );
       onAnnotationsDownloaded(bboxes, annotationList);
