@@ -48,9 +48,20 @@ export default function ConfigForm({ schema, config, onChange }: Props) {
   const set = (path: string[], value: ConfigValue) =>
     onChange(setAtPath(config, path, value) as Config);
 
-  const topKeys = Object.keys(schema);
+  // `order_of_steps` is a meta key (a list of section names), not a renderable
+  // schema node. Pull it out and use it to order the accordions; keys it omits
+  // fall back to schema order, after the listed ones.
+  const order = (schema.order_of_steps as unknown as string[] | undefined) ?? [];
+  const orderIndex = (k: string) => {
+    const i = order.indexOf(k);
+    return i === -1 ? order.length : i;
+  };
+
+  const topKeys = Object.keys(schema).filter((k) => k !== "order_of_steps");
   const generalKeys = topKeys.filter((k) => isSchemaLeaf(schema[k]));
-  const sectionKeys = topKeys.filter((k) => !isSchemaLeaf(schema[k]));
+  const sectionKeys = topKeys
+    .filter((k) => !isSchemaLeaf(schema[k]))
+    .sort((a, b) => orderIndex(a) - orderIndex(b));
 
   const renderLeaf = (path: string[], key: string, leaf: ConfigSchemaLeaf) => {
     // Walk `config` along the path to find the current value.

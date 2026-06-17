@@ -1,4 +1,16 @@
 {
+  "order_of_steps": [
+    "data_source",
+    "steps_to_run",
+    "rate_limits",
+    "polycam",
+    "identify_objects",
+    "normalize_labels",
+    "sam3",
+    "postsam3_pipeline",
+    "captioning"
+  ],
+
   "data_source": { "type": "string", "possible_values": ["polycam"] },
   "steps_to_run": {
     "type": "array",
