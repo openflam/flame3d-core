@@ -40,7 +40,8 @@
     "objects_to_frames_path": null,
     "objects_to_segment": null,
     "tmp_root": null,
-    "save_images": false
+    "save_images": false,
+    "max_frames_per_sequence": null
   },
 
   "postsam3_pipeline": {

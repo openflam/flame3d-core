@@ -11,4 +11,5 @@ hf_cache/
 
 .env
 
-tointegrate/
+# Temporary notebook
+temp.ipynb

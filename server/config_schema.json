@@ -60,7 +60,8 @@
     "objects_to_frames_path": { "type": "string", "nullable": true },
     "objects_to_segment": { "type": "array", "nullable": true },
     "tmp_root": { "type": "string", "nullable": true },
-    "save_images": { "type": "boolean" }
+    "save_images": { "type": "boolean" },
+    "max_frames_per_sequence": { "type": "integer", "nullable": true }
   },
 
   "postsam3_pipeline": {

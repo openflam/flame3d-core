@@ -238,6 +238,7 @@ def run_sam3(
     objects_to_segment: Optional[List[str]] = None,
     tmp_root: Optional[Path] = None,
     save_images: bool = False,
+    max_frames_per_sequence: Optional[int] = None,
 ) -> None:
     """
     Main entry point: iterate over all objects/sequences and run SAM3.
@@ -254,6 +255,10 @@ def run_sam3(
         tmp_root:               directory in which to create temp JPEG folders;
                                 defaults to the system temp dir
         save_images:            if True, also save overlay JPEG visualizations
+        max_frames_per_sequence: cap on frames per SAM3 sequence; longer
+                                sequences are split into consecutive chunks.
+                                None (the default) means no cap — each sequence
+                                is processed in one shot.
     """
     start_time = time.time()
     # ----- Config & paths ---------------------------------------------------
@@ -313,21 +318,33 @@ def run_sam3(
                 f"{objects_filter}"
             )
 
-    # Collect all (obj_name, seq_idx, frame_list) work items
+    # Collect all (obj_name, seq_idx, frame_list) work items. When
+    # max_frames_per_sequence is set, sequences longer than it are split into
+    # consecutive chunks, each getting its own sequence index so it tracks (and
+    # is stored) independently. When it is None there is no cap and each
+    # sequence is kept whole.
     work_items: List[Tuple[str, int, List[str]]] = []
     for obj_name, sequences in objects_to_frames.items():
-        for seq_idx, frame_list in enumerate(sequences):
+        seq_idx = 0  # running index across chunks so output dirs stay distinct
+        for frame_list in sequences:
             if not frame_list:
                 continue
-            if resume:
-                seq_out_dir = masks_base_dir / _sanitize(obj_name) / f"seq_{seq_idx}"
-                if seq_out_dir.is_dir() and any(seq_out_dir.glob("*.json")):
-                    print(
-                        f"[resume] Skipping {obj_name!r} seq {seq_idx} "
-                        f"(output already exists)"
+            chunk_size = max_frames_per_sequence or len(frame_list)
+            for start in range(0, len(frame_list), chunk_size):
+                chunk = frame_list[start : start + chunk_size]
+                if resume:
+                    seq_out_dir = (
+                        masks_base_dir / _sanitize(obj_name) / f"seq_{seq_idx}"
                     )
-                    continue
-            work_items.append((obj_name, seq_idx, frame_list))
+                    if seq_out_dir.is_dir() and any(seq_out_dir.glob("*.json")):
+                        print(
+                            f"[resume] Skipping {obj_name!r} seq {seq_idx} "
+                            f"(output already exists)"
+                        )
+                        seq_idx += 1
+                        continue
+                work_items.append((obj_name, seq_idx, chunk))
+                seq_idx += 1
 
     total = len(work_items)
     if total == 0:
@@ -477,6 +494,7 @@ def run_sam3(
             "objects_to_segment": objects_to_segment,
             "tmp_root": str(tmp_root) if tmp_root else None,
             "save_images": save_images,
+            "max_frames_per_sequence": max_frames_per_sequence,
         }
     }
     
@@ -507,6 +525,7 @@ def run_sam3_from_config(config: dict, dataset_name: str) -> None:
         objects_to_segment=sam_cfg.get("objects_to_segment"),
         tmp_root=Path(tmp_root_str) if tmp_root_str else None,
         save_images=sam_cfg.get("save_images", False),
+        max_frames_per_sequence=sam_cfg.get("max_frames_per_sequence"),
     )
 
 
