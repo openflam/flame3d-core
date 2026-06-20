@@ -16,7 +16,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from config_io import get_images_output_path, get_output_path
+from config_io import get_images_output_path, get_output_path, reset_dir
 
 from .identifier_base import Identifier, create_identifier
 from ..utils.save_runtime_stats import save_runtime_stats
@@ -131,7 +131,13 @@ def identify_all_frames_cli(
     outputs_dir = get_output_path(dataset_name)
     inventory_dir = outputs_dir / "objects_inventory"
     frames_dir = inventory_dir / "frames"
-    frames_dir.mkdir(parents=True, exist_ok=True)
+    # When not resuming, wipe per-frame checkpoints from a previous run so stale
+    # results don't survive into the rebuilt inventory. When resuming
+    # (skip_processed_frames), keep them — resume relies on them being present.
+    if skip_processed_frames:
+        frames_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        reset_dir(frames_dir)
 
     print(f"Images directory:   {images_dir}")
     print(f"Output directory:   {inventory_dir}")

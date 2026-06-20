@@ -27,7 +27,12 @@ import numpy as np
 from pycocotools import mask as mask_utils
 
 from ..utils.colmap_io import load_colmap_model, index_image_metadata
-from config_io import get_images_output_path, get_colmap_output_path, get_output_path
+from config_io import (
+    get_images_output_path,
+    get_colmap_output_path,
+    get_output_path,
+    reset_dir,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -314,8 +319,11 @@ def segment_crops_cli(
     with connected_components_path.open("r", encoding="utf-8") as fh:
         components: List[Dict[str, Any]] = json.load(fh)
 
-    crops_dir = outputs_dir / "crops"
-    crops_dir.mkdir(parents=True, exist_ok=True)
+    # Clear any crops from a previous run so we start from a clean slate.
+    # Otherwise component_<id> directories for components that no longer exist
+    # (e.g. after a parameter change reduced the component count) would linger
+    # and be picked up by downstream captioning / DB steps.
+    crops_dir = reset_dir(outputs_dir / "crops")
 
     # manifest: comp_id (str) → {component_id, total_crops, crops: [...]}
     final_manifest: Dict[str, Any] = {}

@@ -40,7 +40,12 @@ from scipy import sparse
 import torch
 from tqdm import tqdm
 
-from config_io import get_output_path, get_images_output_path, get_colmap_output_path
+from config_io import (
+    get_output_path,
+    get_images_output_path,
+    get_colmap_output_path,
+    reset_dir,
+)
 from ..utils.colmap_io import load_colmap_model
 
 # Node type: (seq_key, obj_slug, obj_id_str)
@@ -822,8 +827,9 @@ def build_object_mask_graph(
     )
     save_dir: Optional[Path] = None
     if save_segment_images:
-        save_dir = outputs_dir / "graph_node_mask_images"
-        save_dir.mkdir(parents=True, exist_ok=True)
+        # Clear stale node images from a previous run so leftover files for
+        # nodes that no longer exist don't accumulate.
+        save_dir = reset_dir(outputs_dir / "graph_node_mask_images")
         print(f"  Saving node mask images → {save_dir}")
     clip_node_embeddings: Dict[Node, np.ndarray] = compute_clip_image_embeddings(
         all_nodes,
