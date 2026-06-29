@@ -4,6 +4,7 @@
     "steps_to_run",
     "rate_limits",
     "polycam",
+    "scannetpp",
     "identify_objects",
     "normalize_labels",
     "sam3",
@@ -11,12 +12,13 @@
     "captioning"
   ],
 
-  "data_source": { "type": "string", "possible_values": ["polycam"] },
+  "data_source": { "type": "string", "possible_values": ["polycam", "scannetpp"] },
   "steps_to_run": {
     "type": "array",
     "nullable": true,
     "possible_values": [
       "polycam_process",
+      "scannetpp_process",
       "identify_objects",
       "normalize_labels",
       "sam3_segmentation",
@@ -43,6 +45,14 @@
 
   "polycam": {
     "depth_tolerance": { "type": "number" }
+  },
+
+  "scannetpp": {
+    "depth_tolerance": { "type": "number" },
+    "point_sample_prob": { "type": "number" },
+    "image_sample_prob": { "type": "number" },
+    "sample_seed": { "type": "integer" },
+    "use_groundtruth_segmentation": { "type": "boolean" }
   },
 
   "identify_objects": {

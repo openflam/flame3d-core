@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from data_processor.vendor_specific.polycam import process_polycam_from_config
+from data_processor.vendor_specific.scannetpp import process_scannetpp_from_config
 from segment3d.identify_objects.orchestrator import identify_all_frames_from_config
 from segment3d.identify_objects.normalize_labels import normalize_labels_from_config
 from server.database.spatial_tables import create_tables_from_config
@@ -159,6 +160,7 @@ def _run_step_subprocess(
 # Maps step name → the from_config callable for inline steps.
 _INLINE_HANDLERS: Dict[str, Any] = {
     "polycam_process": process_polycam_from_config,
+    "scannetpp_process": process_scannetpp_from_config,
     "identify_objects": identify_all_frames_from_config,
     "normalize_labels": normalize_labels_from_config,
     "create_tables": create_tables_from_config,

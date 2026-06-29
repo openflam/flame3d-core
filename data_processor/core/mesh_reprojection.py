@@ -151,6 +151,8 @@ def mesh_reprojection(
     dataset_name: str = "default",
     use_rendered_depth: bool = True,
     save_rendered_depth: bool = True,
+    point_sample_prob: float = 1.0,
+    sample_seed: int = 0,
 ) -> dict[str, Any]:
     """Sample mesh vertices and project them into every image.
 
@@ -176,6 +178,14 @@ def mesh_reprojection(
         When *True* (default) and ``use_rendered_depth`` is also *True*, each
         rendered depth map is written as a 16-bit PNG (millimetres) into
         ``outputs/<dataset_name>/rendered_images/``.
+    point_sample_prob : float, optional
+        Fraction of mesh vertices (in ``(0, 1]``) to keep as projected 3D
+        points.  The **full** mesh is still used for depth rendering and
+        occlusion checks; only the projected point cloud (and the resulting
+        COLMAP tracks) becomes sparser.  Default ``1.0`` projects every vertex.
+        Useful for quick end-to-end test runs.
+    sample_seed : int, optional
+        Seed for the vertex-sampling RNG, for reproducible subsets.
 
     Returns
     -------
@@ -189,6 +199,21 @@ def mesh_reprojection(
 
     if num_points == 0:
         raise ValueError("Mesh has no vertices – nothing to project.")
+
+    # Optionally project only a random subset of vertices. ``candidate_idx``
+    # holds the original vertex indices that are eligible to be observed; the
+    # full mesh is still used for depth rendering, and ``points3D`` keeps the
+    # full vertex array so these indices stay valid as point IDs.
+    if not 0.0 < point_sample_prob <= 1.0:
+        raise ValueError("point_sample_prob must be in (0, 1]")
+    if point_sample_prob < 1.0:
+        rng = np.random.default_rng(sample_seed)
+        candidate_idx = np.where(rng.random(num_points) < point_sample_prob)[0]
+        print(f"Sampling {len(candidate_idx)}/{num_points} mesh vertices "
+              f"(point_sample_prob={point_sample_prob})")
+    else:
+        candidate_idx = np.arange(num_points)
+    sub_vertices = vertices[candidate_idx]
 
     # When rendering depth from the mesh, build the raycasting scene once and
     # reuse it for every frame (avoids rebuilding the BVH per image).
@@ -248,14 +273,15 @@ def mesh_reprojection(
         t = w2c[:3, 3]
 
         # --- Project vertices into the camera frame -----------------------
-        pts_cam = (R @ vertices.T).T + t  # (N, 3)
+        pts_cam = (R @ sub_vertices.T).T + t  # (M, 3)
         depths = pts_cam[:, 2]
 
         # Keep only points in front of the camera.
         in_front = depths > 0
         pts_cam_valid = pts_cam[in_front]
         depths_valid = depths[in_front]
-        indices_valid = np.where(in_front)[0]
+        # Map back to original vertex IDs (indices into the full point array).
+        indices_valid = candidate_idx[in_front]
 
         if len(pts_cam_valid) == 0:
             continue

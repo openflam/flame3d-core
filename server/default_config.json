@@ -13,6 +13,14 @@
     "depth_tolerance": 0.0001
   },
 
+  "scannetpp": {
+    "depth_tolerance": 0.05,
+    "point_sample_prob": 1.0,
+    "image_sample_prob": 1.0,
+    "sample_seed": 0,
+    "use_groundtruth_segmentation": false
+  },
+
   "identify_objects": {
     "identifier_type": "llmapi",
     "model": "gpt-4o-mini",

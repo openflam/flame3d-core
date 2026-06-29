@@ -27,6 +27,7 @@ class DataSource(str, Enum):
     """Supported data-source types."""
 
     POLYCAM = "polycam"
+    SCANNETPP = "scannetpp"
 
 
 # ── Pipeline step descriptor ─────────────────────────────────────────────
@@ -42,20 +43,16 @@ class PipelineStep:
     run_as_subprocess: bool = False
 
 
-# ── Polycam pipeline builder ─────────────────────────────────────────────
+# ── Pipeline builders ────────────────────────────────────────────────────
 
-def _build_polycam_steps() -> List[PipelineStep]:
-    """Build the ordered list of steps for a Polycam dataset."""
+def _downstream_steps() -> List[PipelineStep]:
+    """The vendor-independent steps that run after the data-source step.
+
+    Every data source produces the same on-disk artifacts (mesh, COLMAP files,
+    images symlink), so steps 2–7 are identical regardless of vendor.
+    """
 
     return [
-        # Step 1 — Polycam data processing (flame3d-core, inline)
-        PipelineStep(
-            name="polycam_process",
-            description="Extract and process Polycam raw-data export",
-            conda_env=_FLAME3D_ENV,
-            module="data_processor.vendor_specific.polycam",
-            run_as_subprocess=False,
-        ),
         # Step 2 — Identify objects in frames (flame3d-core, subprocess)
         PipelineStep(
             name="identify_objects",
@@ -113,10 +110,43 @@ def _build_polycam_steps() -> List[PipelineStep]:
     ]
 
 
+def _build_polycam_steps() -> List[PipelineStep]:
+    """Build the ordered list of steps for a Polycam dataset."""
+
+    return [
+        # Step 1 — Polycam data processing (flame3d-core, inline)
+        PipelineStep(
+            name="polycam_process",
+            description="Extract and process Polycam raw-data export",
+            conda_env=_FLAME3D_ENV,
+            module="data_processor.vendor_specific.polycam",
+            run_as_subprocess=False,
+        ),
+        *_downstream_steps(),
+    ]
+
+
+def _build_scannetpp_steps() -> List[PipelineStep]:
+    """Build the ordered list of steps for a ScanNet++ dataset."""
+
+    return [
+        # Step 1 — ScanNet++ data processing (flame3d-core, inline)
+        PipelineStep(
+            name="scannetpp_process",
+            description="Load a ScanNet++ scene and reproject the mesh",
+            conda_env=_FLAME3D_ENV,
+            module="data_processor.vendor_specific.scannetpp",
+            run_as_subprocess=False,
+        ),
+        *_downstream_steps(),
+    ]
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 _PIPELINE_BUILDERS: Dict[DataSource, Callable[[], List[PipelineStep]]] = {
     DataSource.POLYCAM: _build_polycam_steps,
+    DataSource.SCANNETPP: _build_scannetpp_steps,
 }
 
 
