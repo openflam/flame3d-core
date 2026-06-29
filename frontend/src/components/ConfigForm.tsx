@@ -57,10 +57,21 @@ export default function ConfigForm({ schema, config, onChange }: Props) {
     return i === -1 ? order.length : i;
   };
 
+  // Sections named after a data source (e.g. `polycam`, `scannetpp`) are
+  // source-specific: only the one matching the selected `data_source` should be
+  // shown. Any other source's section is hidden.
+  const dataSources =
+    ((schema.data_source as ConfigSchemaLeaf | undefined)?.possible_values as
+      | string[]
+      | undefined) ?? [];
+  const selectedSource = config.data_source;
+  const isHiddenSource = (k: string) =>
+    dataSources.includes(k) && k !== selectedSource;
+
   const topKeys = Object.keys(schema).filter((k) => k !== "order_of_steps");
   const generalKeys = topKeys.filter((k) => isSchemaLeaf(schema[k]));
   const sectionKeys = topKeys
-    .filter((k) => !isSchemaLeaf(schema[k]))
+    .filter((k) => !isSchemaLeaf(schema[k]) && !isHiddenSource(k))
     .sort((a, b) => orderIndex(a) - orderIndex(b));
 
   const renderLeaf = (path: string[], key: string, leaf: ConfigSchemaLeaf) => {
