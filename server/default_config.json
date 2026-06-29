@@ -18,7 +18,9 @@
     "point_sample_prob": 1.0,
     "image_sample_prob": 1.0,
     "sample_seed": 0,
-    "use_groundtruth_segmentation": false
+    "use_groundtruth_segmentation": false,
+    "gt_crop_top_n": 5,
+    "gt_crop_min_fraction": 0.05
   },
 
   "identify_objects": {

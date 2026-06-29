@@ -52,7 +52,9 @@
     "point_sample_prob": { "type": "number" },
     "image_sample_prob": { "type": "number" },
     "sample_seed": { "type": "integer" },
-    "use_groundtruth_segmentation": { "type": "boolean" }
+    "use_groundtruth_segmentation": { "type": "boolean" },
+    "gt_crop_top_n": { "type": "integer" },
+    "gt_crop_min_fraction": { "type": "number" }
   },
 
   "identify_objects": {

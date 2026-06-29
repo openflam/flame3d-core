@@ -153,6 +153,8 @@ def mesh_reprojection(
     save_rendered_depth: bool = True,
     point_sample_prob: float = 1.0,
     sample_seed: int = 0,
+    candidate_indices: np.ndarray | None = None,
+    write_colmap_files: bool = True,
 ) -> dict[str, Any]:
     """Sample mesh vertices and project them into every image.
 
@@ -186,6 +188,15 @@ def mesh_reprojection(
         Useful for quick end-to-end test runs.
     sample_seed : int, optional
         Seed for the vertex-sampling RNG, for reproducible subsets.
+    candidate_indices : numpy.ndarray, optional
+        Explicit array of vertex indices to project as 3D points.  When given it
+        overrides ``point_sample_prob`` — exactly these vertices are projected,
+        while the **full** mesh is still used for depth rendering / occlusion.
+        Useful for projecting a known subset (e.g. one object's vertices).
+    write_colmap_files : bool, optional
+        When *True* (default), write ``cameras/images/points3D.txt`` to
+        ``outputs/<dataset_name>/colmap/``.  Set *False* to skip the COLMAP
+        output and only return the in-memory observations.
 
     Returns
     -------
@@ -200,13 +211,18 @@ def mesh_reprojection(
     if num_points == 0:
         raise ValueError("Mesh has no vertices – nothing to project.")
 
-    # Optionally project only a random subset of vertices. ``candidate_idx``
-    # holds the original vertex indices that are eligible to be observed; the
-    # full mesh is still used for depth rendering, and ``points3D`` keeps the
-    # full vertex array so these indices stay valid as point IDs.
+    # Choose which vertices are projected as 3D points. ``candidate_idx`` holds
+    # the original vertex indices eligible to be observed; the full mesh is still
+    # used for depth rendering, and ``points3D`` keeps the full vertex array so
+    # these indices stay valid as point IDs. An explicit ``candidate_indices``
+    # takes precedence over random ``point_sample_prob`` sampling.
     if not 0.0 < point_sample_prob <= 1.0:
         raise ValueError("point_sample_prob must be in (0, 1]")
-    if point_sample_prob < 1.0:
+    if candidate_indices is not None:
+        candidate_idx = np.asarray(candidate_indices, dtype=int)
+        print(f"Projecting {len(candidate_idx)}/{num_points} explicitly-selected "
+              f"mesh vertices")
+    elif point_sample_prob < 1.0:
         rng = np.random.default_rng(sample_seed)
         candidate_idx = np.where(rng.random(num_points) < point_sample_prob)[0]
         print(f"Sampling {len(candidate_idx)}/{num_points} mesh vertices "
@@ -342,9 +358,10 @@ def mesh_reprojection(
     }
 
     # -- Write COLMAP files -------------------------------------------------
-    colmap_dir = get_colmap_output_path(dataset_name)
-    write_colmap(result, colmap_dir)
-    print(f"COLMAP files written to {colmap_dir}")
+    if write_colmap_files:
+        colmap_dir = get_colmap_output_path(dataset_name)
+        write_colmap(result, colmap_dir)
+        print(f"COLMAP files written to {colmap_dir}")
 
     return result
 

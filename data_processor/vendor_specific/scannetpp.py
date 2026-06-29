@@ -51,7 +51,9 @@ Usage::
 from __future__ import annotations
 
 import json
+import re
 import shutil
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +66,7 @@ from config_io import (
     get_data_path,
     get_images_output_path,
     get_output_path,
+    reset_dir,
 )
 from data_processor.core.mesh_reprojection import mesh_reprojection
 from data_processor.core.obb import compute_obb
@@ -314,76 +317,210 @@ def _vertices_for_segments(
     return np.concatenate([order[bounds[p]:bounds[p + 1]] for p in pos])
 
 
-def _generate_groundtruth_segmentation(dataset_name: str) -> int:
-    """Write ``bbox_corners.json`` + ``component_captions.json`` from GT instances.
+def _load_gt_instances(dataset_name: str, num_vertices: int) -> list[dict[str, Any]]:
+    """Read the ScanNet++ instance annotations into a list of components.
 
-    Shows the ground truth *as-is*, one component **per annotated instance** (not
-    per class): each entry of ``scans/segments_anno.json``'s ``segGroups`` is one
-    object, so multiple plants become multiple components.  An instance's
-    vertices are gathered via ``scans/segments.json`` (``segIndices`` maps vertex
-    -> segment) and the object's ``segments`` list; its caption is the instance
-    ``label`` and its bbox a gravity-aligned oriented box
-    (:func:`data_processor.core.obb.compute_obb`).  No clustering, filtering, or
-    discarding is applied.  The files feed ``create_tables`` exactly like the ML
-    pipeline's outputs do.
-
-    Returns the number of components written.
+    Each ``segGroups`` entry of ``scans/segments_anno.json`` is one annotated
+    object; its vertices are gathered via ``scans/segments.json`` (``segIndices``
+    maps vertex -> segment) and the object's ``segments`` list.  Returns a list of
+    ``{"comp_id", "name", "object_id", "verts"}`` dicts (empty instances skipped),
+    with sequential ``comp_id``s.
     """
     data_dir = get_data_path(dataset_name)
-    mesh_path = data_dir / "scans" / "mesh_aligned_0.05.ply"
     segments_json = data_dir / "scans" / "segments.json"
     anno_json = data_dir / "scans" / "segments_anno.json"
-    for p in (mesh_path, segments_json, anno_json):
+    for p in (segments_json, anno_json):
         if not p.is_file():
             raise FileNotFoundError(f"Required ground-truth file not found: {p}")
 
-    coords = np.asarray(o3d.io.read_triangle_mesh(str(mesh_path)).vertices)
     with open(segments_json) as f:
         seg_indices = np.asarray(json.load(f)["segIndices"], dtype=np.int64)
     with open(anno_json) as f:
         seg_groups = json.load(f)["segGroups"]
-    print(f"Loaded {len(coords)} vertices and {len(seg_groups)} GT instances")
+    if len(seg_indices) != num_vertices:
+        raise ValueError(
+            f"segments.json has {len(seg_indices)} entries but the mesh has "
+            f"{num_vertices} vertices"
+        )
 
     order, unique_segs, bounds = _build_segment_lookup(seg_indices)
 
-    bbox_results: list[dict[str, Any]] = []
-    caption_results: list[dict[str, Any]] = []
+    instances: list[dict[str, Any]] = []
     comp_id = 0
-
     for group in seg_groups:
         segments = np.asarray(group.get("segments", []), dtype=np.int64)
         verts = _vertices_for_segments(segments, order, unique_segs, bounds)
         if len(verts) == 0:
             continue
-        name = group.get("label", "")
-
-        bbox_results.append({
-            "connected_comp_id": comp_id,
-            "class_name": name,
+        instances.append({
+            "comp_id": comp_id,
+            "name": group.get("label", ""),
             "object_id": group.get("objectId", group.get("id")),
+            "verts": verts,
+        })
+        comp_id += 1
+
+    print(f"Loaded {len(instances)} GT instances from {len(seg_groups)} segGroups")
+    return instances
+
+
+def _write_gt_segmentation(
+    dataset_name: str, coords: np.ndarray, instances: list[dict[str, Any]],
+) -> None:
+    """Write ``bbox_corners.json`` + ``component_captions.json`` from instances.
+
+    Shows the ground truth *as-is*: one component per annotated instance, caption
+    = the instance ``label``, bbox = a gravity-aligned oriented box
+    (:func:`data_processor.core.obb.compute_obb`).  No clustering, filtering, or
+    discarding.  The files feed ``create_tables`` like the ML pipeline's outputs.
+    """
+    bbox_results: list[dict[str, Any]] = []
+    caption_results: list[dict[str, Any]] = []
+    for inst in instances:
+        verts = inst["verts"]
+        bbox_results.append({
+            "connected_comp_id": inst["comp_id"],
+            "class_name": inst["name"],
+            "object_id": inst["object_id"],
             "num_point3d_ids": int(len(verts)),
             "num_points_used": int(len(verts)),
             "num_filtered": 0,
             "bbox": compute_obb(coords[verts]),
         })
         caption_results.append({
-            "component_id": comp_id,
-            "caption": name,
+            "component_id": inst["comp_id"],
+            "caption": inst["name"],
             "num_images_used": 0,
             "crop_filenames": [],
         })
-        comp_id += 1
 
     out_dir = get_output_path(dataset_name)
     with open(out_dir / "bbox_corners.json", "w") as f:
         json.dump(bbox_results, f, indent=2)
     with open(out_dir / "component_captions.json", "w") as f:
         json.dump(caption_results, f, indent=2)
+    print(f"Ground-truth segmentation: wrote {len(instances)} components to "
+          f"{out_dir/'bbox_corners.json'} and {out_dir/'component_captions.json'}")
 
-    print(f"Ground-truth segmentation: wrote {comp_id} components to "
-          f"{out_dir/'bbox_corners.json'} and "
-          f"{out_dir/'component_captions.json'}")
-    return comp_id
+
+def _generate_gt_crops(
+    dataset_name: str,
+    frames: list[dict[str, Any]],
+    mesh: o3d.geometry.TriangleMesh,
+    instances: list[dict[str, Any]],
+    top_n: int = 5,
+    min_fraction: float = 0.05,
+    depth_tolerance: float = 0.05,
+) -> None:
+    """Generate the ``crops/`` directory for ground-truth instances.
+
+    Reuses :func:`mesh_reprojection` to project each instance's vertices into
+    every frame **with the mesh depth/occlusion check**, then for each instance
+    keeps the top-``top_n`` frames by fraction of its points visible and crops
+    each frame to the 2-D bounding box of those visible points.  Writes
+    ``crops/component_<id>/<frame>_<instance>_crop.jpg`` plus ``crops/manifest.json``
+    in the same schema the ML ``segment_crops`` step produces.
+    """
+    num_vertices = len(mesh.vertices)
+    vertex_instance = np.full(num_vertices, -1, dtype=np.int64)
+    total_points: dict[int, int] = {}
+    meta: dict[int, dict[str, Any]] = {}
+    for inst in instances:
+        vertex_instance[inst["verts"]] = inst["comp_id"]
+        total_points[inst["comp_id"]] = int(len(inst["verts"]))
+        meta[inst["comp_id"]] = inst
+
+    labeled = np.where(vertex_instance >= 0)[0]
+    if len(labeled) == 0:
+        print("No labeled vertices; skipping crops")
+        return
+
+    # Project only the labeled vertices; the full mesh is still used for the
+    # depth/occlusion check. No COLMAP output is written for the GT path.
+    result = mesh_reprojection(
+        mesh=mesh,
+        image_pose_depth=frames,
+        depth_tolerance=depth_tolerance,
+        dataset_name=dataset_name,
+        candidate_indices=labeled,
+        save_rendered_depth=False,
+        write_colmap_files=False,
+    )
+
+    # Per instance, collect (image_id, fraction_visible, 2D-bbox, visible_count).
+    per_comp: dict[int, list[tuple]] = defaultdict(list)
+    for obs in result["observations"]:
+        img_id = obs["image_id"]
+        pts2d = np.asarray(obs["point2D"])
+        comps = vertex_instance[np.asarray(obs["point3D_ids"])]
+        for comp_id in np.unique(comps):
+            comp_id = int(comp_id)
+            if comp_id < 0:
+                continue
+            sel = pts2d[comps == comp_id]
+            u_min, v_min = sel.min(axis=0)
+            u_max, v_max = sel.max(axis=0)
+            visible = int(len(sel))
+            fraction = visible / total_points[comp_id]
+            per_comp[comp_id].append(
+                (img_id, fraction, (u_min, v_min, u_max, v_max), visible)
+            )
+
+    crops_dir = reset_dir(get_output_path(dataset_name) / "crops")
+    manifest: dict[str, Any] = {}
+    total_saved = 0
+
+    for comp_id, entries in per_comp.items():
+        entries = [e for e in entries if e[1] >= min_fraction]
+        entries.sort(key=lambda e: e[1], reverse=True)
+        entries = entries[:top_n]
+        if not entries:
+            continue
+
+        safe = re.sub(r"[^0-9a-zA-Z]+", "_", meta[comp_id]["name"]).strip("_") or "object"
+        instance_id = f"{safe}_{meta[comp_id]['object_id']}"
+        comp_dir = crops_dir / f"component_{comp_id}"
+        comp_dir.mkdir(parents=True, exist_ok=True)
+
+        comp_crops: list[dict[str, Any]] = []
+        for crop_index, (img_id, fraction, (u_min, v_min, u_max, v_max), visible) in enumerate(entries):
+            frame = frames[img_id - 1]
+            image = frame["image"]  # RGB
+            H, W = image.shape[:2]
+            x0, y0 = max(0, int(np.floor(u_min))), max(0, int(np.floor(v_min)))
+            x1, y1 = min(W, int(np.ceil(u_max)) + 1), min(H, int(np.ceil(v_max)) + 1)
+            if x1 <= x0 or y1 <= y0:
+                continue
+
+            source = frame.get("name", f"frame_{img_id:06d}.jpg")
+            fname = f"{Path(source).stem}_{instance_id}_crop.jpg"
+            cv2.imwrite(
+                str(comp_dir / fname),
+                cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_RGB2BGR),
+            )
+            total_saved += 1
+            comp_crops.append({
+                "crop_filename": fname,
+                "source_image": source,
+                "instance_id": instance_id,
+                "crop_index": crop_index,
+                "crop_coordinates": [x0, y0, x1, y1],
+                "image_id": img_id,
+                "fraction_visible": fraction,
+                "visible_points": visible,
+                "total_points": total_points[comp_id],
+            })
+
+        manifest[str(comp_id)] = {
+            "component_id": comp_id,
+            "total_crops": len(comp_crops),
+            "crops": comp_crops,
+        }
+
+    with open(crops_dir / "manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"Ground-truth crops: wrote {total_saved} crops for {len(manifest)} "
+          f"components to {crops_dir}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -397,6 +534,8 @@ def process_scannetpp(
     image_sample_prob: float = 1.0,
     sample_seed: int = 0,
     use_groundtruth_segmentation: bool = False,
+    gt_crop_top_n: int = 5,
+    gt_crop_min_fraction: float = 0.05,
 ) -> dict[str, Any]:
     """End-to-end ScanNet++ pipeline: load → mesh reproject → export glb.
 
@@ -424,19 +563,26 @@ def process_scannetpp(
     sample_seed : int, optional
         Seed shared by the vertex- and frame-sampling RNGs, for reproducibility.
     use_groundtruth_segmentation : bool, optional
-        When *True*, additionally write ``bbox_corners.json`` and
-        ``component_captions.json`` directly from the ScanNet++ instance
-        annotations (``scans/segments.json`` + ``scans/segments_anno.json``) —
-        one component **per annotated object instance**, shown as-is (no
-        clustering, filtering, or discarding) — bypassing the ML
-        segmentation/captioning steps.  Run the pipeline with ``steps_to_run =
-        ["scannetpp_process", "create_tables"]`` to build a queryable scene
-        straight from ground truth.
+        When *True*, **skip** mesh reprojection (COLMAP) and the image symlink,
+        and instead derive components directly from the ScanNet++ instance
+        annotations (``scans/segments.json`` + ``scans/segments_anno.json``):
+        one component per annotated object, written to ``bbox_corners.json`` /
+        ``component_captions.json``, plus a ``crops/`` directory built by
+        projecting each instance's vertices into the frames (with the mesh depth
+        check) and cropping to the visible 2-D bounds.  Run the pipeline with
+        ``steps_to_run = ["scannetpp_process", "create_tables"]`` to build a
+        queryable scene straight from ground truth.
+    gt_crop_top_n : int, optional
+        Number of best frames to crop per instance in ground-truth mode.
+    gt_crop_min_fraction : float, optional
+        Minimum fraction of an instance's points visible in a frame for it to be
+        eligible as a crop, in ground-truth mode.
 
     Returns
     -------
     dict
-        The result dict from :func:`mesh_reprojection`.
+        The result dict from :func:`mesh_reprojection`, or an empty dict in
+        ground-truth mode (where reprojection is skipped).
     """
     data_dir = get_data_path(dataset_name)
     dslr_dir = data_dir / "dslr"
@@ -461,6 +607,21 @@ def process_scannetpp(
         sample_seed=sample_seed,
     )
 
+    if use_groundtruth_segmentation:
+        # Ground-truth path: no reprojection / COLMAP / image symlink. Derive
+        # components from the instance annotations and build crops directly.
+        coords = np.asarray(mesh.vertices)
+        instances = _load_gt_instances(dataset_name, len(coords))
+        _write_gt_segmentation(dataset_name, coords, instances)
+        _generate_gt_crops(
+            dataset_name, frames, mesh, instances,
+            top_n=gt_crop_top_n,
+            min_fraction=gt_crop_min_fraction,
+            depth_tolerance=depth_tolerance,
+        )
+        _write_mesh_glb(mesh, dataset_name)
+        return {}
+
     # Step 4 – run reprojection (writes COLMAP output automatically)
     result = mesh_reprojection(
         mesh=mesh,
@@ -474,10 +635,6 @@ def process_scannetpp(
     # Step 5 – export mesh.glb (Y-up) and symlink the image directory
     _write_mesh_glb(mesh, dataset_name)
     _link_images(images_dir, dataset_name)
-
-    # Step 6 – optionally derive components directly from the semantic mesh
-    if use_groundtruth_segmentation:
-        _generate_groundtruth_segmentation(dataset_name)
 
     return result
 
@@ -501,6 +658,8 @@ def process_scannetpp_from_config(config: dict, dataset_name: str) -> dict:
         sample_seed=scannetpp_cfg.get("sample_seed", 0),
         use_groundtruth_segmentation=scannetpp_cfg.get(
             "use_groundtruth_segmentation", False),
+        gt_crop_top_n=scannetpp_cfg.get("gt_crop_top_n", 5),
+        gt_crop_min_fraction=scannetpp_cfg.get("gt_crop_min_fraction", 0.05),
     )
 
 
