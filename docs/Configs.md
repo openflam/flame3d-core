@@ -169,8 +169,22 @@ Runs a Vision-Language Model on every frame to build an objects inventory.
 | `identifier_type` | string | `vllm`, `openai` | `vllm` | Backend: `vllm` for local GPU inference, `openai` for the OpenAI API. |
 | `model` | string | — | `Qwen/Qwen3-VL-8B-Instruct` | HuggingFace model ID (or OpenAI model name) used for identification. |
 | `device` | integer | — | `0` | GPU device index for local inference. |
-| `max_frames` | integer (nullable) | — | `null` | Cap on the number of frames to process. `null` processes all frames. |
+| `max_frames` | integer (nullable) | — | `null` | Cap on the number of frames to process. `null` processes all frames. When set, frames are **uniformly sampled** across the whole capture (not the first N) — see the note below. |
 | `batch_size` | integer | — | `32` | Number of frames processed per batch. |
+
+> **`max_frames` and SAM3 tracking.** This cap propagates downstream: only the
+> selected frames enter `objects_inventory.json`, so only they survive into
+> `objects_to_frames.json` and are ever segmented by SAM3. Frames are sampled
+> uniformly across the capture so the inventory covers the whole scene rather
+> than just its opening frames. The trade-off: SAM3 is a *video* predictor that
+> tracks objects by propagating masks between adjacent frames in a sequence,
+> which assumes small inter-frame motion. Uniform sampling spreads the kept
+> frames further apart in time, so the camera baseline between "consecutive"
+> frames grows and tracking can degrade. Sequence-building is unaffected
+> (`build_objects_to_frames` treats frames as consecutive by position in the
+> reduced inventory, not by raw frame number), so this is a quality, not a
+> breakage, concern. If tracking suffers, raise `max_frames` to tighten the
+> spacing, or tune `min_sequence_length` / `max_frames_per_sequence`.
 
 ---
 

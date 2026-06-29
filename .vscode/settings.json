@@ -4,5 +4,9 @@
     },
     "[jsonc]": {
         "editor.formatOnSave": false
+    },
+    "files.watcherExclude": {
+        "**/data/**": true,
+        "**/outputs/**": true
     }
 }

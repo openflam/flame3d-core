@@ -16,6 +16,8 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from config_io import get_images_output_path, get_output_path, reset_dir
 
 from .identifier_base import Identifier, create_identifier
@@ -155,10 +157,12 @@ def identify_all_frames_cli(
         )
 
     total_discovered = len(all_frames)
-    if max_frames is not None:
-        all_frames = all_frames[:max_frames]
+    if max_frames is not None and max_frames < total_discovered:
+        # Uniformly sample max_frames across all frames.
+        indices = np.linspace(0, total_discovered - 1, max_frames).round().astype(int)
+        all_frames = [all_frames[i] for i in indices]
         print(
-            f"\nLimiting to {len(all_frames)} frames (out of {total_discovered} total)"
+            f"\nUniformly sampling {len(all_frames)} frames (out of {total_discovered} total)"
         )
     else:
         print(f"\nFound {len(all_frames)} frames to process")
