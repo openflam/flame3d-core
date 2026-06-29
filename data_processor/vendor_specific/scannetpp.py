@@ -3,7 +3,11 @@ scannetpp.py – Load a ScanNet++ scene and run mesh reprojection.
 
 Expected input
 --------------
-Place an unpacked ScanNet++ scene at ``data/<dataset_name>/`` with (at least)
+Place ``input.zip`` (a packed ScanNet++ scene) at::
+
+    data/<dataset_name>/input.zip
+
+The ZIP is extracted into ``data/<dataset_name>/`` and must contain (at least)
 the following subset of the official ScanNet++ layout::
 
     data/<dataset_name>/
@@ -70,6 +74,7 @@ from config_io import (
 )
 from data_processor.core.mesh_reprojection import mesh_reprojection
 from data_processor.core.obb import compute_obb
+from data_processor.utils.extract_zip import extract_zip
 from segment3d.utils.read_write_model import read_images_text
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -537,15 +542,16 @@ def process_scannetpp(
     gt_crop_top_n: int = 5,
     gt_crop_min_fraction: float = 0.05,
 ) -> dict[str, Any]:
-    """End-to-end ScanNet++ pipeline: load → mesh reproject → export glb.
+    """End-to-end ScanNet++ pipeline: extract → load → mesh reproject → export glb.
 
-    1. Loads ``scans/mesh_aligned_0.05.ply`` (kept in its Z-up frame).
-    2. Reads camera poses from ``dslr/colmap/images.txt`` and the shared
+    1. Extracts ``data/<dataset_name>/input.zip`` into ``data/<dataset_name>/``.
+    2. Loads ``scans/mesh_aligned_0.05.ply`` (kept in its Z-up frame).
+    3. Reads camera poses from ``dslr/colmap/images.txt`` and the shared
        PINHOLE intrinsics from ``dslr/nerfstudio/transforms_undistorted.json``.
-    3. Builds one frame per usable undistorted image and calls
+    4. Builds one frame per usable undistorted image and calls
        :func:`mesh_reprojection`, writing COLMAP files to
        ``outputs/<dataset_name>/colmap/``.
-    4. Writes ``mesh.glb`` (Y-up for the viewer) and symlinks the image dir.
+    5. Writes ``mesh.glb`` (Y-up for the viewer) and symlinks the image dir.
 
     Parameters
     ----------
@@ -585,6 +591,13 @@ def process_scannetpp(
         ground-truth mode (where reprojection is skipped).
     """
     data_dir = get_data_path(dataset_name)
+
+    # Step 0 – extract input.zip into the dataset dir (skip if already extracted)
+    if (data_dir / "scans").is_dir() and (data_dir / "dslr").is_dir():
+        print(f"Using existing extracted scene at {data_dir}")
+    else:
+        extract_zip(data_dir / "input.zip", data_dir)
+
     dslr_dir = data_dir / "dslr"
     mesh_path = data_dir / "scans" / "mesh_aligned_0.05.ply"
     images_dir = dslr_dir / "resized_undistorted_images"
