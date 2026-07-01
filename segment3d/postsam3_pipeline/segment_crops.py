@@ -34,7 +34,6 @@ from config_io import (
     reset_dir,
 )
 
-
 # ---------------------------------------------------------------------------
 # Instance-ID helpers
 # ---------------------------------------------------------------------------
@@ -116,7 +115,10 @@ def rank_frames_by_visibility(
     Args:
         point3d_ids: The 3-D point IDs belonging to this component.
         point3d_to_images: Reverse index from :func:`build_point3d_to_images`.
-        available_frames: If given, restrict to frames in this set.
+        available_frames: If given, restrict to frames whose stem is in this set.
+            Frames are matched by filename *stem* (extension dropped) so that the
+            COLMAP image names (e.g. ``DSC04435.JPG``) match the mask-derived
+            frame list regardless of extension or case.
 
     Returns:
         List of ``(image_name, fraction)`` pairs sorted descending by fraction.
@@ -130,7 +132,7 @@ def rank_frames_by_visibility(
 
     for pid in point3d_ids:
         for img_name in point3d_to_images.get(pid, []):
-            if available_frames is None or img_name in available_frames:
+            if available_frames is None or Path(img_name).stem in available_frames:
                 counter[img_name] += 1
 
     ranked = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
@@ -373,8 +375,7 @@ def segment_crops_cli(
         for _, object_class, seq_name, _ in parsed_instances:
             seq_mask_dir = object_masks_root / object_class / seq_name
             for p in seq_mask_dir.glob("*.json"):
-                available_image_names.add(f"{p.stem}.jpg")
-                available_image_names.add(f"{p.stem}.png")
+                available_image_names.add(p.stem)
 
         ranked_frames = rank_frames_by_visibility(
             point3d_ids, point3d_to_images, available_frames=available_image_names
