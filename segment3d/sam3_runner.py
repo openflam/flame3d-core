@@ -59,14 +59,34 @@ from segment3d.utils.save_runtime_stats import save_runtime_stats
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Supported image extensions (case-insensitive). Frame names elsewhere in the
+# pipeline are filename *stems*, so we resolve a stem to its actual file rather
+# than assuming a particular extension/case (ScanNet++ DSLR frames are ``.JPG``).
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
 
 def _sanitize(name: str) -> str:
     """Convert object name to a filesystem-safe directory name."""
     return name.replace(" ", "_").replace("/", "-").replace("\\", "-")
 
 
+def _index_images_by_stem(images_dir: Path) -> Dict[str, Path]:
+    """Map each image's filename stem to its path (e.g. ``DSC06005`` -> file).
+
+    Built once per run so frames can be resolved by stem without assuming a
+    particular extension or case. Matching is by ``suffix.lower()`` against the
+    supported set, mirroring how the objects-inventory step discovers frames.
+    """
+    index: Dict[str, Path] = {}
+    for path in sorted(images_dir.iterdir()):
+        if path.suffix.lower() in _IMAGE_EXTENSIONS:
+            index.setdefault(path.stem, path)
+    return index
+
+
 def _build_temp_jpeg_dir(
     frame_names: List[str],
+    image_index: Dict[str, Path],
     images_dir: Path,
     tmp_root: Optional[Path] = None,
 ) -> Tuple[Path, List[str]]:
@@ -77,17 +97,19 @@ def _build_temp_jpeg_dir(
     SAM3 expects a JPEG folder with integer-named files so it can sort them
     numerically.
 
+    Args:
+        frame_names: frame stems to link, in order.
+        image_index: stem -> image path map from :func:`_index_images_by_stem`.
+        images_dir:  source image directory (used only for error messages).
+
     Returns:
         (tmp_dir, ordered_frame_names) where ordered_frame_names[i] is the
         original frame name corresponding to symlink i.jpg.
     """
     tmp_dir = Path(tempfile.mkdtemp(dir=tmp_root))
     for idx, frame_name in enumerate(frame_names):
-        src = images_dir / f"{frame_name}.jpg"
-        if not src.is_file():
-            # fall back to .png
-            src = images_dir / f"{frame_name}.png"
-        if not src.is_file():
+        src = image_index.get(frame_name)
+        if src is None or not src.is_file():
             raise FileNotFoundError(
                 f"Image not found for frame '{frame_name}' in {images_dir}"
             )
@@ -153,7 +175,7 @@ def _save_sequence_masks(
     frame_names: List[str],
     masks_seq_dir: Path,
     images_seq_dir: Optional[Path] = None,
-    images_dir: Optional[Path] = None,
+    image_index: Optional[Dict[str, Path]] = None,
     save_images: bool = False,
 ) -> None:
     """
@@ -170,7 +192,7 @@ def _save_sequence_masks(
         frame_names:       original frame names (frame_names[i] ↔ local index i)
         masks_seq_dir:     directory where .json mask files are written
         images_seq_dir:    directory where overlay .jpg files are written
-        images_dir:        source image directory – required when save_images=True
+        image_index:       stem -> image path map – required when save_images=True
         save_images:       if True, also save overlay .jpg visualizations
     """
     masks_seq_dir.mkdir(parents=True, exist_ok=True)
@@ -214,11 +236,9 @@ def _save_sequence_masks(
         with open(out_path, "wb") as fh:
             fh.write(orjson.dumps(anns))
 
-        if save_images and images_dir is not None and images_seq_dir is not None:
-            img_path = images_dir / f"{frame_name}.jpg"
-            if not img_path.is_file():
-                img_path = images_dir / f"{frame_name}.png"
-            if img_path.is_file():
+        if save_images and image_index is not None and images_seq_dir is not None:
+            img_path = image_index.get(frame_name)
+            if img_path is not None and img_path.is_file():
                 img_np = load_frame(str(img_path))
                 overlay = render_masklet_frame(img_np, frame_out, frame_idx=local_idx)
                 overlay_path = images_seq_dir / f"{frame_name}.jpg"
@@ -264,6 +284,10 @@ def run_sam3(
     # ----- Config & paths ---------------------------------------------------
     images_dir = get_images_output_path(dataset_name)
     outputs_dir = get_output_path(dataset_name)
+
+    # Index images by filename stem once, so frames (addressed by stem) resolve
+    # regardless of extension/case (e.g. ScanNet++ DSLR frames are ``.JPG``).
+    image_index = _index_images_by_stem(images_dir)
 
     obj_level_masks_dir = outputs_dir / "object_level_masks"
     masks_base_dir = obj_level_masks_dir / "masks"
@@ -399,7 +423,7 @@ def run_sam3(
             # Build temp JPEG folder
             try:
                 tmp_dir, ordered_names = _build_temp_jpeg_dir(
-                    frame_list, images_dir, tmp_root
+                    frame_list, image_index, images_dir, tmp_root
                 )
             except FileNotFoundError as exc:
                 print(f"  [skip] {exc}")
@@ -455,7 +479,7 @@ def run_sam3(
                 ordered_names,
                 masks_seq_dir,
                 images_seq_dir=images_seq_dir,
-                images_dir=images_dir,
+                image_index=image_index,
                 save_images=save_images,
             )
 

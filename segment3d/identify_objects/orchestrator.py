@@ -18,9 +18,15 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from config_io import get_images_output_path, get_output_path, reset_dir
+from config_io import (
+    get_colmap_output_path,
+    get_images_output_path,
+    get_output_path,
+    reset_dir,
+)
 
 from .identifier_base import Identifier, create_identifier
+from ..utils.read_write_model import read_images_binary, read_images_text
 from ..utils.save_runtime_stats import save_runtime_stats
 
 # Supported image extensions (case-insensitive)
@@ -43,6 +49,33 @@ def _discover_frames(images_dir: Path) -> List[tuple[str, Path]]:
         if image_path.suffix.lower() in _IMAGE_EXTENSIONS:
             frames.append((image_path.stem, image_path))
     return frames
+
+
+def _load_colmap_frame_stems(dataset_name: str) -> Optional[set[str]]:
+    """
+    Return the set of filename stems registered in the COLMAP reconstruction.
+
+    Reads ``outputs/<dataset_name>/colmap/images.{txt,bin}`` (whichever exists)
+    and returns each image's filename stem (e.g. ``DSC00001`` from
+    ``DSC00001.JPG``), so it can be matched against ``_discover_frames`` output.
+    Only these frames actually contribute to the 3D reconstruction — running the
+    VLM on images the pipeline never reprojected is wasted work.
+
+    Returns None if no COLMAP images file is found, so the caller can fall back
+    to processing every discovered image.
+    """
+    colmap_dir = get_colmap_output_path(dataset_name)
+    images_txt = colmap_dir / "images.txt"
+    images_bin = colmap_dir / "images.bin"
+
+    if images_txt.is_file():
+        images = read_images_text(str(images_txt))
+    elif images_bin.is_file():
+        images = read_images_binary(str(images_bin))
+    else:
+        return None
+
+    return {Path(img.name).stem for img in images.values()}
 
 
 def _frame_result_path(frames_dir: Path, frame_name: str) -> Path:
@@ -155,6 +188,34 @@ def identify_all_frames_cli(
             f"No image files found in {images_dir}. "
             "Supported extensions: " + ", ".join(sorted(_IMAGE_EXTENSIONS))
         )
+
+    # Restrict to images that actually made it into the COLMAP reconstruction.
+    # Frames the pipeline never reprojected contribute nothing downstream, so
+    # running the VLM on them is wasted work. If no COLMAP images file exists,
+    # fall back to every discovered image.
+    colmap_stems = _load_colmap_frame_stems(dataset_name)
+    if colmap_stems is None:
+        print(
+            "\nNo COLMAP images file found; processing every discovered image "
+            "(cannot restrict to reconstructed frames)."
+        )
+    else:
+        num_discovered = len(all_frames)
+        all_frames = [
+            (frame_name, image_path)
+            for frame_name, image_path in all_frames
+            if frame_name in colmap_stems
+        ]
+        print(
+            f"\nRestricting to COLMAP-registered frames: {len(all_frames)} of "
+            f"{num_discovered} discovered images are in the reconstruction"
+        )
+        if not all_frames:
+            raise FileNotFoundError(
+                f"None of the {num_discovered} images in {images_dir} matched a "
+                f"frame in the COLMAP reconstruction "
+                f"({get_colmap_output_path(dataset_name)})."
+            )
 
     total_discovered = len(all_frames)
     if max_frames is not None and max_frames < total_discovered:
