@@ -42,6 +42,50 @@ def _get_coords(point3d_ids: List[int], points3D: Dict) -> Tuple[np.ndarray, Lis
     return np.array(coords, dtype=float), valid_ids
 
 
+# ---------------------------------------------------------------------------
+# Point-count statistics
+# ---------------------------------------------------------------------------
+
+_PERCENTILE_LEVELS = [1, 5, 10, 25, 50, 75, 90, 95, 99]
+
+
+def point_count_stats(components: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Summarise the distribution of 3D-point counts across components.
+
+    Counts the length of each component's ``set_of_point3DIds`` and returns
+    total, mean/std, min/max, and a set of percentiles over those per-component
+    counts. Used for both the pre-clean and post-clean stages so the two are
+    directly comparable.
+    """
+    counts = np.array(
+        [len(c["set_of_point3DIds"]) for c in components], dtype=np.int64
+    )
+    n = int(counts.size)
+    if n == 0:
+        return {
+            "num_components": 0,
+            "total_points": 0,
+            "mean": None,
+            "std": None,
+            "min": None,
+            "max": None,
+            "percentiles": {},
+        }
+    percentiles = np.percentile(counts, _PERCENTILE_LEVELS)
+    return {
+        "num_components": n,
+        "total_points": int(counts.sum()),
+        "mean": float(counts.mean()),
+        "std": float(counts.std()),
+        "min": int(counts.min()),
+        "max": int(counts.max()),
+        "percentiles": {
+            str(level): float(value)
+            for level, value in zip(_PERCENTILE_LEVELS, percentiles)
+        },
+    }
+
+
 def clean_component(
     component: Dict[str, Any],
     points3D: Dict,
@@ -197,6 +241,13 @@ def clean_connected_components(
         connected_components: List[Dict[str, Any]] = json.load(fh)
     print(f"  {len(connected_components)} components loaded.")
 
+    # ---- pre-clean point-count stats ----
+    stats_path = outputs_dir / "component_point_stats.json"
+    stats: Dict[str, Any] = {"pre_clean": point_count_stats(connected_components)}
+    with stats_path.open("w", encoding="utf-8") as fh:
+        json.dump(stats, fh, indent=2)
+    print(f"Pre-clean point-count stats saved → {stats_path}")
+
     print(f"\nLoading COLMAP model from {colmap_model_dir} …")
     cameras, images, points3D = load_colmap_model(colmap_model_dir)
     print(f"  {len(points3D)} 3D points loaded.")
@@ -249,6 +300,12 @@ def clean_connected_components(
     with components_path.open("w", encoding="utf-8") as fh:
         json.dump(all_output, fh, indent=2)
     print(f"\nSaved cleaned components → {components_path}")
+
+    # ---- post-clean point-count stats ----
+    stats["cleaned"] = point_count_stats(all_output)
+    with stats_path.open("w", encoding="utf-8") as fh:
+        json.dump(stats, fh, indent=2)
+    print(f"Point-count stats (pre-clean + cleaned) saved → {stats_path}")
 
 
 # ---------------------------------------------------------------------------
