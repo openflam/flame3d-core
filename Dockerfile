@@ -6,19 +6,27 @@
 # for code changes.
 #
 # (The lightweight Flask API uses server/Dockerfile instead.)
+#
+# CUDA 13 by default (host driver >= 580). For older drivers build with
+#   --build-arg CUDA_VERSION=12.8.1 --build-arg TORCH_CUDA_VERSION=cu128
 # =============================================================================
 
-FROM nvidia/cuda:12.6.3-devel-ubuntu22.04
+ARG CUDA_VERSION=13.0.1
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ---- System dependencies ----------------------------------------------------
+# libegl1, libtbb12, libusb-1.0-0: required by open3d
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         git \
         build-essential \
         libgl1-mesa-glx \
         libglib2.0-0 \
+        libegl1 \
+        libtbb12 \
+        libusb-1.0-0 \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -53,10 +61,11 @@ RUN conda run -n flame3d-core python -m spacy download en_core_web_sm
 # ---- Create sam3 environment ------------------------------------------------
 RUN conda create -y -n sam3 python=3.12
 
-# Install PyTorch with CUDA support in sam3 env
+# Install PyTorch with CUDA support in sam3 env (wheel suffix matching CUDA_VERSION)
+ARG TORCH_CUDA_VERSION=cu130
 RUN conda run -n sam3 pip install --no-cache-dir \
         torch==2.10.0 torchvision \
-        --index-url https://download.pytorch.org/whl/cu128
+        --index-url https://download.pytorch.org/whl/${TORCH_CUDA_VERSION}
 
 # Clone SAM 3 and install in editable mode
 RUN git clone https://github.com/facebookresearch/sam3.git /opt/sam3 \
@@ -77,7 +86,11 @@ RUN conda run -n sam3 pip install --no-cache-dir orjson \
 # Optional: faster inference dependencies
 RUN conda run -n sam3 pip install --no-cache-dir einops ninja \
     && conda run -n sam3 pip install --no-cache-dir flash-attn-3 --no-deps \
-        --index-url https://download.pytorch.org/whl/cu128 || true
+        --index-url https://download.pytorch.org/whl/${TORCH_CUDA_VERSION} || true
+
+# ---- Runtime library path ---------------------------------------------------
+# Leave /usr/local/cuda/lib64 off so torch loads the cuBLAS it ships with
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 
 # ---- Working directory (will be overridden by volume mount) -----------------
 WORKDIR /app
